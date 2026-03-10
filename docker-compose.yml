@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+
+  backend:
+    build: ./backend
+    container_name: dougao-backend
+    restart: unless-stopped
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+    volumes:
+      - dougao-data:/data
+    networks:
+      - internal
+
+  frontend:
+    build: ./frontend
+    container_name: dougao-frontend
+    restart: unless-stopped
+    ports:
+      - "3010:80"   # Configure domínio no Coolify apontando para esta porta
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  bot:
+    build: ./bot
+    container_name: dougao-notetaker-bot
+    restart: unless-stopped
+    environment:
+      - BOT_GOOGLE_EMAIL=${BOT_GOOGLE_EMAIL}
+      - BOT_GOOGLE_PASSWORD=${BOT_GOOGLE_PASSWORD}
+      - API_BASE=http://backend:8000/api
+      - JOIN_BEFORE_MINUTES=${JOIN_BEFORE_MINUTES:-2}
+      - LINGER_AFTER_EMPTY_SECS=${LINGER_AFTER_EMPTY_SECS:-30}
+    volumes:
+      - dougao-data:/data   # compartilha token.json + credentials.json + áudio
+    shm_size: "512mb"       # Chrome precisa de shared memory
+    cap_add:
+      - SYS_ADMIN
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  dougao-data:
+    driver: local
