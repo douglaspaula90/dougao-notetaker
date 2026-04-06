@@ -55,6 +55,20 @@ async def list_meetings() -> list[dict]:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
 
+async def search_meetings(query: str) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        like = f"%{query}%"
+        async with db.execute(
+            """SELECT * FROM meetings
+               WHERE title LIKE ? OR transcript LIKE ? OR summary LIKE ? OR participants LIKE ?
+               ORDER BY created_at DESC""",
+            (like, like, like, like)
+        ) as cur:
+            rows = await cur.fetchall()
+            return [dict(r) for r in rows]
+
+
 async def update_meeting(meeting_id: str, **kwargs):
     if not kwargs:
         return

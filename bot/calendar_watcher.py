@@ -113,11 +113,19 @@ class CalendarWatcher:
 
     async def run(self):
         logger.info("📅 Calendar watcher started (polling every 60s)")
+        consecutive_errors = 0
         while True:
             try:
                 await self._check()
+                consecutive_errors = 0
             except Exception as e:
-                logger.error(f"Calendar check error: {e}", exc_info=True)
+                consecutive_errors += 1
+                backoff = min(60 * consecutive_errors, 600)
+                logger.error(f"Calendar check error ({consecutive_errors}x): {e}", exc_info=True)
+                if consecutive_errors >= 5:
+                    logger.warning(f"Multiple calendar errors. Backing off {backoff}s.")
+                await asyncio.sleep(backoff)
+                continue
             await asyncio.sleep(60)
 
     async def _check(self):

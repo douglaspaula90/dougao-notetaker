@@ -7,7 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from services.transcription import transcribe_audio
 from services.diarization import diarize_audio, merge_transcript_with_speakers
 from services.summarization import summarize_meeting
-from database.models import update_meeting
+from services.email_service import send_meeting_email
+from database.models import update_meeting, get_meeting
 
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=2)
@@ -54,20 +55,25 @@ async def process_meeting(
         logger.info(f"[{meeting_id}] Step 3/3: Generating summary...")
         summary_data = await summarize_meeting(merged, title)
 
-        # 5. Save everything
+        # 5. Save everything (summary field stores full JSON data)
         await update_meeting(
             meeting_id,
             status="done",
             transcript=json.dumps(merged, ensure_ascii=False),
-            summary=summary_data.get("summary", ""),
+            summary=json.dumps(summary_data, ensure_ascii=False),
             action_items=json.dumps(summary_data.get("action_items", []), ensure_ascii=False),
             participants=json.dumps(participants, ensure_ascii=False),
             duration_seconds=duration,
-            # Store full summary data as JSON in summary field
-            summary=json.dumps(summary_data, ensure_ascii=False)
         )
 
         logger.info(f"[{meeting_id}] ✅ Pipeline complete!")
+
+        # Send email notification
+        try:
+            updated_meeting = await get_meeting(meeting_id)
+            await send_meeting_email(updated_meeting, summary_data)
+        except Exception as email_err:
+            logger.error(f"[{meeting_id}] Email notification failed: {email_err}")
 
     except Exception as e:
         logger.error(f"[{meeting_id}] ❌ Pipeline failed: {e}", exc_info=True)

@@ -301,6 +301,14 @@ class MeetBot:
             '//h1[contains(., "saiu da chamada")]',
             '//div[contains(., "Your meeting ended")]',
             '//div[contains(., "Sua reunião terminou")]',
+            '//div[contains(., "You left the meeting")]',
+            '//div[contains(., "Você saiu da reunião")]',
+            '//div[contains(., "The meeting has ended")]',
+            '//div[contains(., "A reunião terminou")]',
+            '//button[contains(., "Return to home screen")]',
+            '//button[contains(., "Voltar para a tela inicial")]',
+            '//button[contains(., "Rejoin")]',
+            '//button[contains(., "Voltar para a reunião")]',
         ]
         for sel in end_selectors:
             try:
@@ -314,6 +322,15 @@ class MeetBot:
                         return True
             except Exception:
                 pass
+
+        # Check if current URL changed away from meet
+        try:
+            url = self.page.url
+            if url and "meet.google.com" not in url:
+                return True
+        except Exception:
+            pass
+
         return False
 
     async def _get_participant_count(self) -> int:
@@ -348,25 +365,30 @@ class MeetBot:
             logger.warning("No audio file to upload")
 
     async def _upload_audio(self):
-        try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                with open(self.audio_path, "rb") as f:
-                    response = await client.post(
-                        f"{API_BASE}/audio/upload",
-                        files={"file": (self.audio_path.name, f, "audio/mpeg")},
-                        data={
-                            "title": self.meeting["title"],
-                            "speaker_names": "{}",  # pyannote will auto-detect
-                        }
-                    )
-                response.raise_for_status()
-                result = response.json()
-                logger.info(f"✅ Uploaded! meeting_id={result['meeting_id']}")
+        max_retries = 4
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=300) as client:
+                    with open(self.audio_path, "rb") as f:
+                        response = await client.post(
+                            f"{API_BASE}/audio/upload",
+                            files={"file": (self.audio_path.name, f, "audio/mpeg")},
+                            data={
+                                "title": self.meeting["title"],
+                                "speaker_names": "{}",
+                            }
+                        )
+                    response.raise_for_status()
+                    result = response.json()
+                    logger.info(f"✅ Uploaded! meeting_id={result['meeting_id']}")
+                    self.audio_path.unlink(missing_ok=True)
+                    return
 
-                # Clean up local audio file after successful upload
-                self.audio_path.unlink(missing_ok=True)
-
-        except Exception as e:
-            logger.error(f"Upload failed: {e}", exc_info=True)
-            # Keep audio file for manual retry
-            logger.info(f"Audio preserved at: {self.audio_path}")
+            except Exception as e:
+                wait = 2 ** attempt
+                logger.error(f"Upload attempt {attempt}/{max_retries} failed: {e}")
+                if attempt < max_retries:
+                    logger.info(f"Retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    logger.error(f"All upload attempts failed. Audio preserved at: {self.audio_path}")

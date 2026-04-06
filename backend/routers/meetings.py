@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from database.models import list_meetings, get_meeting
+from fastapi import APIRouter, HTTPException, Query
+from database.models import list_meetings, get_meeting, search_meetings
 import json
 
 router = APIRouter()
@@ -35,8 +35,11 @@ def parse_meeting(m: dict) -> dict:
     return m
 
 @router.get("/")
-async def get_meetings():
-    meetings = await list_meetings()
+async def get_meetings(q: str = Query(default=None, description="Search by keyword")):
+    if q and q.strip():
+        meetings = await search_meetings(q.strip())
+    else:
+        meetings = await list_meetings()
     return [parse_meeting(m) for m in meetings]
 
 @router.get("/{meeting_id}")

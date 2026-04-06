@@ -75,6 +75,43 @@ body {
   letter-spacing: 1px;
 }
 
+/* ── Search Box ──────────────────────────────────────────────────────────── */
+.search-box {
+  padding: 12px 12px 0;
+  position: relative;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 9px 32px 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Syne', sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.search-box input:focus { border-color: var(--accent); }
+.search-box input::placeholder { color: var(--text3); }
+
+.search-clear {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-25%);
+  background: none;
+  border: none;
+  color: var(--text3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px;
+}
+
+.search-clear:hover { color: var(--text2); }
+
 /* ── Meeting List ─────────────────────────────────────────────────────────── */
 .meeting-list {
   flex: 1;
@@ -518,3 +555,98 @@ body {
 /* ── Loading list ─────────────────────────────────────────────────────────── */
 .list-loading { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .list-loading div { height: 58px; }
+
+/* ── Login Screen ────────────────────────────────────────────────────────── */
+.login-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  background: var(--bg);
+}
+
+.login-box {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 40px;
+  width: 360px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-logo { font-size: 48px; }
+
+.login-box h1 {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: 'DM Serif Display', serif;
+  color: var(--text);
+  margin: 0;
+}
+
+.login-box p {
+  font-size: 13px;
+  color: var(--text3);
+  margin: 0 0 8px;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 14px;
+  font-family: 'DM Mono', monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.login-box input:focus { border-color: var(--accent); }
+
+.login-box button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Syne', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.login-box button:hover { background: var(--accent2); }
+.login-box button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.login-error {
+  font-size: 12px;
+  color: var(--red);
+  padding: 6px 10px;
+  background: rgba(248,113,113,.1);
+  border-radius: 6px;
+}
+
+/* ── Logout Button ───────────────────────────────────────────────────────── */
+.btn-logout {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text3);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-logout:hover { color: var(--red); border-color: var(--red); }

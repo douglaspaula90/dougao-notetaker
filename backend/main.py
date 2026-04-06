@@ -1,8 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database.models import create_tables
 from routers import meetings, audio
+from routers.auth_router import router as auth_router
+from routers.settings import router as settings_router
+from auth import verify_auth
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -30,8 +33,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"])
-app.include_router(audio.router, prefix="/api/audio", tags=["audio"])
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"], dependencies=[Depends(verify_auth)])
+app.include_router(audio.router, prefix="/api/audio", tags=["audio"], dependencies=[Depends(verify_auth)])
+app.include_router(settings_router, prefix="/api/settings", tags=["settings"], dependencies=[Depends(verify_auth)])
 
 @app.get("/health")
 async def health():

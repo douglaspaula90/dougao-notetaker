@@ -1,11 +1,11 @@
 # 🎙️ Dougao Notetaker
 
-**Meeting Intelligence para Google Meet** — o bot entra automaticamente nas reuniões da sua agenda, transcreve com identificação de speakers, gera resumo e acionáveis.
+**Meeting Intelligence para Google Meet** — o bot entra automaticamente nas reuniões da sua agenda, transcreve com identificação de speakers, gera resumo e acionáveis, e envia tudo por email.
 
 ## Como funciona
 
 ```
-Google Calendar (douglas.paula@medway.com.br)
+Google Calendar
         ↓  detecta reunião 2 min antes
    Bot abre Chrome headless na VPS
         ↓  entra no Meet como "Dougao Notetaker 🎙️"
@@ -13,15 +13,27 @@ Google Calendar (douglas.paula@medway.com.br)
         ↓
    Whisper API → transcrição | pyannote → speakers | GPT-4o mini → resumo
         ↓
-   Dashboard web
+   Dashboard web + Email com resumo e acionáveis
 ```
+
+## Funcionalidades
+
+- **Gravação automática** — bot monitora Google Calendar e entra nas reuniões
+- **Gravação manual** — extensão Chrome para gravar diretamente no Meet
+- **Transcrição** — Whisper API com identificação de speakers (pyannote)
+- **Resumo inteligente** — GPT-4o mini gera resumo executivo, tópicos, decisões e acionáveis
+- **Email pós-reunião** — resumo e acionáveis enviados automaticamente por email (SMTP)
+- **Busca** — pesquise reuniões por nome, palavra-chave ou participante
+- **Autenticação** — acesso protegido por API key
+- **Dashboard** — interface web completa com tema dark
 
 ## Pré-requisitos
 
-- VPS com Coolify (já configurado)
-- Conta `dougaonotetaker@gmail.com` criada
+- VPS com Docker (Coolify recomendado)
+- Conta Google para o bot (ex: dougaonotetaker@gmail.com)
 - Créditos OpenAI (platform.openai.com)
 - Conta HuggingFace gratuita (huggingface.co)
+- (Opcional) Conta Gmail com App Password para envio de emails
 
 ## Setup — Passo a Passo
 
@@ -43,7 +55,7 @@ cd bot/
 pip install google-auth-oauthlib google-api-python-client
 python google_auth.py
 ```
-Abre o browser → login com douglas.paula@medway.com.br → autoriza → gera token.json
+Abre o browser → login com sua conta → autoriza → gera token.json
 
 **c.** Copie para a VPS:
 ```bash
@@ -53,14 +65,24 @@ scp credentials.json token.json usuario@SUA_VPS:/var/lib/docker/volumes/dougao_d
 ### 3. Variáveis de ambiente
 ```bash
 cp .env.example .env
-# Preencha OPENAI_API_KEY, HUGGINGFACE_TOKEN, BOT_GOOGLE_EMAIL, BOT_GOOGLE_PASSWORD
 ```
+Preencha todas as variáveis. Veja o `.env.example` para detalhes.
 
-### 4. Deploy no Coolify
-1. Projeto "dougao-notetaker" → Docker Compose
-2. Adicione as variáveis do .env
-3. Domínio → porta 3010
-4. Deploy 🚀
+**Variáveis obrigatórias:**
+- `OPENAI_API_KEY` — chave da API OpenAI
+- `HUGGINGFACE_TOKEN` — token do HuggingFace (gratuito)
+- `BOT_GOOGLE_EMAIL` / `BOT_GOOGLE_PASSWORD` — conta do bot
+
+**Variáveis opcionais:**
+- `APP_API_KEY` — chave de acesso à plataforma (se vazio, acesso livre)
+- `SMTP_*` — configurações SMTP para envio de emails pós-reunião
+- `NOTIFICATION_EMAIL` — email(s) destino dos resumos
+
+### 4. Deploy
+```bash
+docker compose up -d
+```
+Ou via Coolify: adicione docker-compose.yml, variáveis de ambiente, domínio → porta 3010.
 
 ## Custo estimado
 | Reunião | Total |
@@ -69,5 +91,18 @@ cp .env.example .env
 | 1 hora | ~$0,38 |
 | 2 horas | ~$0,76 |
 
+## Stack
+
+| Componente | Tecnologia |
+|---|---|
+| Backend | Python, FastAPI, SQLite |
+| Frontend | React, Vite, Nginx |
+| Bot | pyppeteer (Chromium), PulseAudio, ffmpeg |
+| Transcrição | OpenAI Whisper API |
+| Diarização | pyannote.audio |
+| Resumo | GPT-4o mini |
+| Email | SMTP (Gmail App Password) |
+| Deploy | Docker Compose |
+
 ## Nota LGPD
-Informe os participantes que a reunião está sendo gravada. A conta dougaonotetaker@gmail.com aparece visivelmente como participante — assim como Fireflies/tl;dv fazem.
+Informe os participantes que a reunião está sendo gravada. A conta do bot aparece visivelmente como participante — assim como Fireflies/tl;dv fazem.
