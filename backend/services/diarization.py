@@ -14,10 +14,11 @@ def get_pipeline() -> Pipeline:
         hf_token = os.environ.get("HUGGINGFACE_TOKEN")
         if not hf_token:
             raise RuntimeError("HUGGINGFACE_TOKEN not set. Get a free token at huggingface.co")
+        # Set HF_TOKEN env var so pyannote/huggingface_hub picks it up automatically
+        os.environ["HF_TOKEN"] = hf_token
         logger.info("Loading pyannote diarization model (first run may take a while)...")
         _pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            token=hf_token
         )
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _pipeline = _pipeline.to(torch.device(device))
