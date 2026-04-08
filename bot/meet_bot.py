@@ -167,18 +167,29 @@ class MeetBot:
         except Exception:
             pass
 
-        # Password - try multiple times with increasing timeout
-        try:
-            await self.page.waitForSelector('input[type="password"]', {"visible": True, "timeout": 30000})
-        except Exception:
-            # Maybe Google is showing a different page - take screenshot
+        # Password - try multiple selectors
+        password_selectors = [
+            'input[type="password"]',
+            'input[name="Passwd"]',
+            'input[name="password"]',
+            '#password input',
+        ]
+        password_field = None
+        for sel in password_selectors:
+            try:
+                await self.page.waitForSelector(sel, {"visible": True, "timeout": 10000})
+                password_field = sel
+                break
+            except Exception:
+                continue
+
+        if not password_field:
             await self.page.screenshot({"path": "/data/debug_no_password.png"})
             page_url = self.page.url
             logger.error(f"Password field not found. Current URL: {page_url}")
-            logger.error("Check /data/debug_no_password.png for what Google is showing")
-            raise
+            raise RuntimeError("Could not find password field")
 
-        await self.page.type('input[type="password"]', BOT_PASSWORD, {"delay": 80})
+        await self.page.type(password_field, BOT_PASSWORD, {"delay": 80})
         await asyncio.sleep(1)
         await self.page.keyboard.press("Enter")
 
