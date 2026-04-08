@@ -22,6 +22,7 @@ BOT_EMAIL    = os.environ["BOT_GOOGLE_EMAIL"]     # dougaonotetaker@gmail.com
 BOT_PASSWORD = os.environ["BOT_GOOGLE_PASSWORD"]
 BOT_NAME     = "Dougao Notetaker 🎙️"
 API_BASE     = os.environ.get("API_BASE", "http://backend:8000/api")
+API_KEY      = os.environ.get("APP_API_KEY", "")
 AUDIO_DIR    = Path("/data/bot-audio")
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -496,6 +497,9 @@ class MeetBot:
         max_retries = 4
         for attempt in range(1, max_retries + 1):
             try:
+                headers = {}
+                if API_KEY:
+                    headers["Authorization"] = f"Bearer {API_KEY}"
                 async with httpx.AsyncClient(timeout=300) as client:
                     with open(self.audio_path, "rb") as f:
                         response = await client.post(
@@ -504,7 +508,8 @@ class MeetBot:
                             data={
                                 "title": self.meeting["title"],
                                 "speaker_names": "{}",
-                            }
+                            },
+                            headers=headers,
                         )
                     response.raise_for_status()
                     result = response.json()
