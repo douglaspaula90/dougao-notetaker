@@ -5,6 +5,7 @@ from database.models import create_tables
 from routers import meetings, audio
 from routers.auth_router import router as auth_router
 from routers.settings import router as settings_router
+from routers.bot import router as bot_router
 from auth import verify_auth
 import logging
 
@@ -37,6 +38,7 @@ app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(meetings.router, prefix="/api/meetings", tags=["meetings"], dependencies=[Depends(verify_auth)])
 app.include_router(audio.router, prefix="/api/audio", tags=["audio"], dependencies=[Depends(verify_auth)])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"], dependencies=[Depends(verify_auth)])
+app.include_router(bot_router, prefix="/api/bot", tags=["bot"], dependencies=[Depends(verify_auth)])
 
 @app.get("/health")
 async def health():

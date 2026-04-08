@@ -650,3 +650,54 @@ body {
 }
 
 .btn-logout:hover { color: var(--red); border-color: var(--red); }
+
+/* ── Bot Join Form ───────────────────────────────────────────────────────── */
+.bot-join-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 440px;
+  margin-top: 16px;
+}
+
+.bot-join-form input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 13px;
+  font-family: 'Syne', sans-serif;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.bot-join-form input:focus { border-color: var(--accent); }
+.bot-join-form input::placeholder { color: var(--text3); }
+
+.bot-join-form button {
+  padding: 11px 20px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Syne', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bot-join-form button:hover { background: var(--accent2); }
+.bot-join-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bot-join-message {
+  font-size: 13px;
+  color: var(--green);
+  text-align: center;
+  padding: 8px;
+  background: rgba(52,211,153,.1);
+  border-radius: 6px;
+}

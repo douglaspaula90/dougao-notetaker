@@ -149,14 +149,58 @@ export default function App() {
 }
 
 function EmptyState() {
+  const [meetUrl, setMeetUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [sending, setSending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleSendBot = async () => {
+    if (!meetUrl) return;
+    setSending(true);
+    setMessage("");
+    try {
+      const res = await fetch(`${API}/bot/join`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ meet_url: meetUrl, title: title || "Reuniao" }),
+      });
+      if (res.ok) {
+        setMessage("Bot enviado! Aceite ele na reuniao.");
+        setMeetUrl("");
+        setTitle("");
+      } else {
+        const err = await res.json();
+        setMessage(`Erro: ${err.error || err.detail || "Falha ao enviar bot"}`);
+      }
+    } catch {
+      setMessage("Erro de conexao com o servidor.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="empty-state">
       <div className="empty-icon">🎙️</div>
-      <h2>Selecione uma reunião</h2>
-      <p>Escolha uma reunião na barra lateral para ver a transcrição, resumo e acionáveis.</p>
-      <div className="empty-hint">
-        <span>💡</span>
-        <span>Use a extensão Chrome no Google Meet para gravar novas reuniões.</span>
+      <h2>Enviar bot para uma reuniao</h2>
+      <p>Cole o link do Google Meet e o bot entrara na reuniao para gravar.</p>
+      <div className="bot-join-form">
+        <input
+          type="text"
+          placeholder="https://meet.google.com/xxx-xxxx-xxx"
+          value={meetUrl}
+          onChange={(e) => setMeetUrl(e.target.value)}
+        />
+        <input
+          type="text"
+          placeholder="Nome da reuniao (opcional)"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <button onClick={handleSendBot} disabled={sending || !meetUrl}>
+          {sending ? "Enviando..." : "Enviar bot para a reuniao"}
+        </button>
+        {message && <div className="bot-join-message">{message}</div>}
       </div>
     </div>
   );

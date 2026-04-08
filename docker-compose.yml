@@ -16,6 +16,7 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Dougao Notetaker}
       - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-}
+      - BOT_API=http://bot:8080
     volumes:
       - dougao-data:/data
     networks:
@@ -37,11 +38,8 @@ services:
     container_name: dougao-notetaker-bot
     restart: unless-stopped
     environment:
-      - BOT_GOOGLE_EMAIL=${BOT_GOOGLE_EMAIL}
-      - BOT_GOOGLE_PASSWORD=${BOT_GOOGLE_PASSWORD}
       - API_BASE=http://backend:8000/api
       - APP_API_KEY=${APP_API_KEY:-}
-      - JOIN_BEFORE_MINUTES=${JOIN_BEFORE_MINUTES:-2}
       - LINGER_AFTER_EMPTY_SECS=${LINGER_AFTER_EMPTY_SECS:-30}
     volumes:
       - dougao-data:/data   # compartilha token.json + credentials.json + áudio
