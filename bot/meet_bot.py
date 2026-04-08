@@ -213,13 +213,38 @@ class MeetBot:
     async def _join_meet_as_visitor(self):
         """Join Google Meet as a visitor (no Google login required)."""
         url = self.meeting["meet_url"]
-        # Add authuser=0 to avoid Google account selection issues
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}authuser=0"
-        logger.info(f"Navigating to {url} (visitor mode)")
-        await self.page.goto(url, {"waitUntil": "networkidle2", "timeout": 30000})
 
-        await asyncio.sleep(5)
+        max_attempts = 10
+        for attempt in range(1, max_attempts + 1):
+            logger.info(f"Navigating to {url} (visitor mode, attempt {attempt}/{max_attempts})")
+            await self.page.goto(url, {"waitUntil": "networkidle2", "timeout": 30000})
+
+            await asyncio.sleep(5)
+
+            # Check if we got "You can't join" page
+            cant_join = False
+            try:
+                els = await self.page.xpath("//h1[contains(., \"can't join\")]")
+                if els:
+                    cant_join = True
+                els2 = await self.page.xpath('//h1[contains(., "não pode participar")]')
+                if els2:
+                    cant_join = True
+            except Exception:
+                pass
+
+            if cant_join:
+                if attempt < max_attempts:
+                    logger.info(f"Meeting not ready yet (no host present). Retrying in 30s...")
+                    await asyncio.sleep(30)
+                    continue
+                else:
+                    raise RuntimeError("Could not join meeting after all attempts")
+
+            # We got past the block - proceed with joining
+            break
 
         # Dismiss "Got it" popup if present
         try:
