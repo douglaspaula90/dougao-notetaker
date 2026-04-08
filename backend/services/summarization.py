@@ -4,7 +4,13 @@ import json
 import logging
 
 logger = logging.getLogger(__name__)
-client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    return _client
 
 SYSTEM_PROMPT = """Você é um assistente especializado em análise de reuniões de negócios.
 Analise a transcrição fornecida e responda APENAS com um JSON válido, sem texto adicional.
@@ -48,7 +54,7 @@ async def summarize_meeting(transcript_segments: list[dict], title: str = "Reuni
 
     logger.info(f"Sending transcript to GPT-4o mini ({len(transcript_text)} chars)...")
 
-    response = await client.chat.completions.create(
+    response = await _get_client().chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},

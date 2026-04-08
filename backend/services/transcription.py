@@ -5,7 +5,13 @@ import subprocess
 import logging
 
 logger = logging.getLogger(__name__)
-client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = openai.AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    return _client
 
 async def convert_to_mp3(input_path: str) -> str:
     """Convert any audio format to mp3 using ffmpeg."""
@@ -34,7 +40,7 @@ async def transcribe_audio(audio_path: str) -> list[dict]:
     logger.info(f"Sending to Whisper API: {audio_path}")
 
     with open(audio_path, "rb") as f:
-        response = await client.audio.transcriptions.create(
+        response = await _get_client().audio.transcriptions.create(
             model="whisper-1",
             file=f,
             response_format="verbose_json",
