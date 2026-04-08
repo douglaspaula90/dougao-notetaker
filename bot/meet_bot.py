@@ -105,9 +105,8 @@ class MeetBot:
     # ── Browser & Google Login ───────────────────────────────────────────────
 
     async def _launch_browser(self):
-        profile_dir = f"/tmp/dougao-profile-{uuid.uuid4().hex[:8]}"
         self.browser = await launch(
-            headless=False,  # Use headful mode with Xvfb (avoids Google bot detection)
+            headless=False,
             executablePath="/usr/bin/chromium",
             args=[
                 "--no-sandbox",
@@ -116,17 +115,14 @@ class MeetBot:
                 "--disable-gpu",
                 "--disable-software-rasterizer",
                 "--disable-blink-features=AutomationControlled",
-                # Route audio to our PulseAudio sink
+                "--incognito",
                 f"--alsa-output-device=pulse:{self.pulse_sink}",
-                # Grant mic/camera permissions silently
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
-                f"--user-data-dir={profile_dir}",
                 "--window-size=1280,720",
-                # Make Chrome look like a real browser
+                "--lang=pt-BR",
                 "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             ],
-            userDataDir=profile_dir,
         )
         self.page = await self.browser.newPage()
         await self.page.setViewport({"width": 1280, "height": 720})
