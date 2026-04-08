@@ -226,9 +226,18 @@ class MeetBot:
         # Change display name if prompted
         await self._set_display_name()
 
+        # Take screenshot of Meet pre-join screen
+        try:
+            await self.page.screenshot({"path": "/data/debug_meet_prejoin.png"})
+            logger.info("Debug screenshot saved: /data/debug_meet_prejoin.png")
+        except Exception:
+            pass
+
         # Click "Join now" / "Participar agora"
         joined = await self._click_join_button()
         if not joined:
+            await self.page.screenshot({"path": "/data/debug_meet_no_join.png"})
+            logger.error("Check /data/debug_meet_no_join.png")
             raise RuntimeError("Could not find join button in Google Meet")
 
         await asyncio.sleep(5)
