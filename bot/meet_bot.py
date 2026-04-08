@@ -107,7 +107,7 @@ class MeetBot:
     async def _launch_browser(self):
         profile_dir = f"/tmp/dougao-profile-{uuid.uuid4().hex[:8]}"
         self.browser = await launch(
-            headless=True,
+            headless=False,  # Use headful mode with Xvfb (avoids Google bot detection)
             executablePath="/usr/bin/chromium",
             args=[
                 "--no-sandbox",
@@ -115,6 +115,7 @@ class MeetBot:
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--disable-software-rasterizer",
+                "--disable-blink-features=AutomationControlled",
                 # Route audio to our PulseAudio sink
                 f"--alsa-output-device=pulse:{self.pulse_sink}",
                 # Grant mic/camera permissions silently
@@ -122,11 +123,19 @@ class MeetBot:
                 "--use-fake-device-for-media-stream",
                 f"--user-data-dir={profile_dir}",
                 "--window-size=1280,720",
+                # Make Chrome look like a real browser
+                "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             ],
             userDataDir=profile_dir,
         )
         self.page = await self.browser.newPage()
         await self.page.setViewport({"width": 1280, "height": 720})
+
+        # Remove automation flags that Google detects
+        await self.page.evaluateOnNewDocument("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            delete navigator.__proto__.webdriver;
+        """)
 
         # Grant permissions for the Meet origin
         try:
