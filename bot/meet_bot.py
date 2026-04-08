@@ -213,10 +213,22 @@ class MeetBot:
     async def _join_meet_as_visitor(self):
         """Join Google Meet as a visitor (no Google login required)."""
         url = self.meeting["meet_url"]
+        # Add authuser=0 to avoid Google account selection issues
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}authuser=0"
         logger.info(f"Navigating to {url} (visitor mode)")
         await self.page.goto(url, {"waitUntil": "networkidle2", "timeout": 30000})
 
         await asyncio.sleep(5)
+
+        # Dismiss "Got it" popup if present
+        try:
+            got_it_btns = await self.page.xpath('//button[contains(., "Got it")]')
+            if got_it_btns:
+                await got_it_btns[0].click()
+                await asyncio.sleep(1)
+        except Exception:
+            pass
 
         # Dismiss any cookie/consent banners
         await self._dismiss_dialogs()
@@ -228,13 +240,16 @@ class MeetBot:
         except Exception:
             pass
 
-        # Enter name in the "Your name" field (visitor mode)
+        # Enter name in the name field (visitor mode)
         name_entered = False
         name_selectors = [
             'input[placeholder="Your name"]',
             'input[placeholder="Seu nome"]',
             'input[aria-label="Your name"]',
             'input[aria-label="Seu nome"]',
+            'input[aria-label="What\'s your name?"]',
+            'input[aria-label="Qual é o seu nome?"]',
+            'input[jsname]',
             'input[type="text"]',
         ]
         for sel in name_selectors:
@@ -356,13 +371,17 @@ class MeetBot:
         """Click the join button. Tries multiple selectors."""
         join_selectors = [
             # English
-            'button[jsname="Qx7uuf"]',
-            '//button[contains(., "Join now")]',
             '//button[contains(., "Ask to join")]',
+            '//button[contains(., "Join now")]',
+            '//span[contains(., "Ask to join")]/ancestor::button',
+            '//span[contains(., "Join now")]/ancestor::button',
             # Portuguese
-            '//button[contains(., "Participar agora")]',
             '//button[contains(., "Pedir para participar")]',
-            # Generic fallback
+            '//button[contains(., "Participar agora")]',
+            '//span[contains(., "Pedir para participar")]/ancestor::button',
+            '//span[contains(., "Participar agora")]/ancestor::button',
+            # Generic
+            'button[jsname="Qx7uuf"]',
             '[data-idom-class*="join"]',
         ]
 
