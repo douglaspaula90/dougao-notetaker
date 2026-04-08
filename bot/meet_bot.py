@@ -469,7 +469,7 @@ class MeetBot:
             '//div[contains(., "Você saiu da reunião")]',
             '//div[contains(., "The meeting has ended")]',
             '//div[contains(., "A reunião terminou")]',
-            '//div[contains(., "You can\\'t join this video call")]',
+            "//div[contains(., \"You can't join this video call\")]",
             '//div[contains(., "Você não pode participar")]',
         ]
         for sel in end_selectors:
