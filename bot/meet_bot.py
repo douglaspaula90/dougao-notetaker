@@ -129,11 +129,14 @@ class MeetBot:
         await self.page.setViewport({"width": 1280, "height": 720})
 
         # Grant permissions for the Meet origin
-        context = self.browser.defaultBrowserContext()
-        await context.overridePermissions(
-            "https://meet.google.com",
-            ["microphone", "camera", "notifications"]
-        )
+        try:
+            context = self.browser.browserContexts[0]
+            await context.overridePermissions(
+                "https://meet.google.com",
+                ["microphone", "camera", "notifications"]
+            )
+        except Exception as e:
+            logger.warning(f"Could not set permissions (non-fatal): {e}")
         logger.info("Browser launched")
 
     async def _login_google(self):
