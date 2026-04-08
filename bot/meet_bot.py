@@ -443,6 +443,22 @@ class MeetBot:
                 linger_started = None  # reset if others rejoin
 
     async def _is_meeting_ended(self) -> bool:
+        # First check if we're on a "waiting to be admitted" screen — NOT ended
+        wait_selectors = [
+            '//div[contains(., "Waiting to be admitted")]',
+            '//div[contains(., "Aguardando permissão")]',
+            '//div[contains(., "Ask to join")]',
+            '//div[contains(., "Pedir para participar")]',
+            '//div[contains(., "waiting")]',
+        ]
+        for sel in wait_selectors:
+            try:
+                els = await self.page.xpath(sel)
+                if els:
+                    return False  # Still waiting, not ended
+            except Exception:
+                pass
+
         end_selectors = [
             '[data-call-ended="true"]',
             '//h1[contains(., "left the call")]',
@@ -453,31 +469,23 @@ class MeetBot:
             '//div[contains(., "Você saiu da reunião")]',
             '//div[contains(., "The meeting has ended")]',
             '//div[contains(., "A reunião terminou")]',
-            '//button[contains(., "Return to home screen")]',
-            '//button[contains(., "Voltar para a tela inicial")]',
-            '//button[contains(., "Rejoin")]',
-            '//button[contains(., "Voltar para a reunião")]',
+            '//div[contains(., "You can\\'t join this video call")]',
+            '//div[contains(., "Você não pode participar")]',
         ]
         for sel in end_selectors:
             try:
                 if sel.startswith("//"):
                     els = await self.page.xpath(sel)
                     if els:
+                        logger.info(f"Meeting end detected by selector: {sel}")
                         return True
                 else:
                     el = await self.page.querySelector(sel)
                     if el:
+                        logger.info(f"Meeting end detected by selector: {sel}")
                         return True
             except Exception:
                 pass
-
-        # Check if current URL changed away from meet
-        try:
-            url = self.page.url
-            if url and "meet.google.com" not in url:
-                return True
-        except Exception:
-            pass
 
         return False
 
