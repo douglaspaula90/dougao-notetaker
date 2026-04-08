@@ -145,16 +145,47 @@ class MeetBot:
         await self.page.goto("https://accounts.google.com/signin", {"waitUntil": "networkidle2"})
 
         # Email
-        await self.page.waitForSelector('input[type="email"]', {"timeout": 15000})
-        await self.page.type('input[type="email"]', BOT_EMAIL, {"delay": 50})
+        await self.page.waitForSelector('input[type="email"]', {"timeout": 30000})
+        await self.page.type('input[type="email"]', BOT_EMAIL, {"delay": 80})
+        await asyncio.sleep(1)
+        await self.page.keyboard.press("Enter")
+        await asyncio.sleep(3)
+
+        # Take screenshot to debug what Google is showing
+        try:
+            await self.page.screenshot({"path": "/data/debug_after_email.png"})
+            logger.info("Debug screenshot saved: /data/debug_after_email.png")
+        except Exception:
+            pass
+
+        # Password - try multiple times with increasing timeout
+        try:
+            await self.page.waitForSelector('input[type="password"]', {"visible": True, "timeout": 30000})
+        except Exception:
+            # Maybe Google is showing a different page - take screenshot
+            await self.page.screenshot({"path": "/data/debug_no_password.png"})
+            page_url = self.page.url
+            logger.error(f"Password field not found. Current URL: {page_url}")
+            logger.error("Check /data/debug_no_password.png for what Google is showing")
+            raise
+
+        await self.page.type('input[type="password"]', BOT_PASSWORD, {"delay": 80})
+        await asyncio.sleep(1)
         await self.page.keyboard.press("Enter")
 
-        # Password
-        await self.page.waitForSelector('input[type="password"]', {"visible": True, "timeout": 15000})
-        await self.page.type('input[type="password"]', BOT_PASSWORD, {"delay": 50})
-        await self.page.keyboard.press("Enter")
+        await asyncio.sleep(5)
 
-        await self.page.waitForNavigation({"waitUntil": "networkidle2", "timeout": 20000})
+        # Check if login succeeded or if there's a challenge
+        try:
+            await self.page.screenshot({"path": "/data/debug_after_login.png"})
+            logger.info("Debug screenshot saved: /data/debug_after_login.png")
+        except Exception:
+            pass
+
+        current_url = self.page.url
+        if "challenge" in current_url or "signin" in current_url:
+            logger.warning(f"Google may be showing a challenge. URL: {current_url}")
+
         logger.info("✅ Logged in to Google")
 
     # ── Google Meet ─────────────────────────────────────────────────────────
