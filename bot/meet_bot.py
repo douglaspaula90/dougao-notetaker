@@ -46,8 +46,7 @@ class MeetBot:
         try:
             self._setup_pulse()
             await self._launch_browser()
-            await self._login_google()
-            await self._join_meet()
+            await self._join_meet_as_visitor()
             self._start_recording()
             await self._wait_for_meeting_end()
         except Exception as e:
@@ -208,7 +207,73 @@ class MeetBot:
 
         logger.info("✅ Logged in to Google")
 
-    # ── Google Meet ─────────────────────────────────────────────────────────
+    # ── Google Meet (visitor mode — no login needed) ─────────────────────────
+
+    async def _join_meet_as_visitor(self):
+        """Join Google Meet as a visitor (no Google login required)."""
+        url = self.meeting["meet_url"]
+        logger.info(f"Navigating to {url} (visitor mode)")
+        await self.page.goto(url, {"waitUntil": "networkidle2", "timeout": 30000})
+
+        await asyncio.sleep(5)
+
+        # Dismiss any cookie/consent banners
+        await self._dismiss_dialogs()
+
+        # Take screenshot to see current state
+        try:
+            await self.page.screenshot({"path": "/data/debug_meet_visitor.png"})
+            logger.info("Debug screenshot: /data/debug_meet_visitor.png")
+        except Exception:
+            pass
+
+        # Enter name in the "Your name" field (visitor mode)
+        name_entered = False
+        name_selectors = [
+            'input[placeholder="Your name"]',
+            'input[placeholder="Seu nome"]',
+            'input[aria-label="Your name"]',
+            'input[aria-label="Seu nome"]',
+            'input[type="text"]',
+        ]
+        for sel in name_selectors:
+            try:
+                name_input = await self.page.querySelector(sel)
+                if name_input:
+                    await name_input.click({"clickCount": 3})
+                    await name_input.type(BOT_NAME, {"delay": 40})
+                    name_entered = True
+                    logger.info(f"Entered name: {BOT_NAME}")
+                    break
+            except Exception:
+                continue
+
+        if not name_entered:
+            logger.warning("Could not find name input field")
+
+        await asyncio.sleep(1)
+
+        # Turn off camera and mic before joining
+        await self._mute_before_join()
+
+        await asyncio.sleep(1)
+
+        # Take screenshot before clicking join
+        try:
+            await self.page.screenshot({"path": "/data/debug_meet_prejoin.png"})
+            logger.info("Debug screenshot: /data/debug_meet_prejoin.png")
+        except Exception:
+            pass
+
+        # Click join / ask to join button
+        joined = await self._click_join_button()
+        if not joined:
+            await self.page.screenshot({"path": "/data/debug_meet_no_join.png"})
+            logger.error("Could not find join button. Check /data/debug_meet_no_join.png")
+            raise RuntimeError("Could not find join button in Google Meet")
+
+        await asyncio.sleep(5)
+        logger.info(f"✅ Joined (or requested to join): {self.meeting['title']}")
 
     async def _join_meet(self):
         url = self.meeting["meet_url"]
