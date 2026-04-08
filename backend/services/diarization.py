@@ -17,7 +17,7 @@ def get_pipeline() -> Pipeline:
         logger.info("Loading pyannote diarization model (first run may take a while)...")
         _pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.1",
-            use_auth_token=hf_token
+            token=hf_token
         )
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _pipeline = _pipeline.to(torch.device(device))
