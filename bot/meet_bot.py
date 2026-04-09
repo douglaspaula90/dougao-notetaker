@@ -116,7 +116,12 @@ class MeetBot:
     def _stop_recording(self):
         if self.ffmpeg_proc:
             self.ffmpeg_proc.send_signal(signal.SIGINT)
-            self.ffmpeg_proc.wait(timeout=10)
+            try:
+                self.ffmpeg_proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                logger.warning("ffmpeg did not stop gracefully, killing...")
+                self.ffmpeg_proc.kill()
+                self.ffmpeg_proc.wait(timeout=5)
             self.ffmpeg_proc = None
         self._recording = False
         logger.info(f"⏹ Recording stopped: {self.audio_path}")
