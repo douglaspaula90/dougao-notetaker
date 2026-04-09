@@ -9,8 +9,8 @@ export DISPLAY=:99
 echo "✅ Xvfb started on :99"
 
 # ── Start PulseAudio in user mode ────────────────────────────────────────────
-# System mode has auth issues; use user mode instead
 export PULSE_RUNTIME_PATH=/tmp/pulse
+export PULSE_SERVER=unix:/tmp/pulse/native
 mkdir -p /tmp/pulse
 pulseaudio --daemonize --exit-idle-time=-1 \
            --log-target=stderr --log-level=warn \
@@ -18,10 +18,11 @@ pulseaudio --daemonize --exit-idle-time=-1 \
 sleep 2
 echo "✅ PulseAudio started"
 
-# ── Load null sink module (fallback) ─────────────────────────────────────────
+# ── Load default null sink ───────────────────────────────────────────────────
 pactl load-module module-null-sink sink_name=default_sink \
       sink_properties=device.description=DefaultCapture || true
+pactl set-default-sink default_sink || true
 
-# ── Start the bot ─────────────────────────────────────────────────────────────
-echo "🚀 Starting calendar watcher..."
+# ── Start the bot ─────────────────────────────────────────────────────────
+echo "🚀 Starting bot API (manual mode)..."
 exec python main.py

@@ -150,7 +150,6 @@ export default function App() {
 
 function EmptyState() {
   const [meetUrl, setMeetUrl] = useState("");
-  const [title, setTitle] = useState("");
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -162,12 +161,11 @@ function EmptyState() {
       const res = await fetch(`${API}/bot/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ meet_url: meetUrl, title: title || "Reuniao" }),
+        body: JSON.stringify({ meet_url: meetUrl }),
       });
       if (res.ok) {
         setMessage("Bot enviado! Aceite ele na reuniao.");
         setMeetUrl("");
-        setTitle("");
       } else {
         const err = await res.json();
         setMessage(`Erro: ${err.error || err.detail || "Falha ao enviar bot"}`);
@@ -190,12 +188,7 @@ function EmptyState() {
           placeholder="https://meet.google.com/xxx-xxxx-xxx"
           value={meetUrl}
           onChange={(e) => setMeetUrl(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="Nome da reuniao (opcional)"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSendBot()}
         />
         <button onClick={handleSendBot} disabled={sending || !meetUrl}>
           {sending ? "Enviando..." : "Enviar bot para a reuniao"}

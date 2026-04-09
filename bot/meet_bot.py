@@ -58,15 +58,17 @@ class MeetBot:
     # ── PulseAudio virtual sink ─────────────────────────────────────────────
 
     def _setup_pulse(self):
-        """Create a virtual PulseAudio sink to capture Chrome's audio output."""
+        """Create a virtual PulseAudio sink and set as default so Chrome uses it."""
         sink_name = f"dougao_{uuid.uuid4().hex[:8]}"
         subprocess.run(
             ["pactl", "load-module", "module-null-sink",
              f"sink_name={sink_name}", "sink_properties=device.description=DougaoCapture"],
             check=True, capture_output=True
         )
+        # Set as default sink so Chrome sends audio here
+        subprocess.run(["pactl", "set-default-sink", sink_name], capture_output=True)
         self.pulse_sink = sink_name
-        logger.info(f"PulseAudio sink created: {sink_name}")
+        logger.info(f"PulseAudio sink created and set as default: {sink_name}")
 
     def _cleanup_pulse(self):
         if self.pulse_sink:
@@ -81,6 +83,23 @@ class MeetBot:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.audio_path = AUDIO_DIR / f"meeting_{ts}.mp3"
 
+        # Move all Chrome audio streams to our sink
+        try:
+            result = subprocess.run(
+                ["pactl", "list", "sink-inputs", "short"],
+                capture_output=True, text=True
+            )
+            for line in result.stdout.strip().split("\n"):
+                if line.strip():
+                    input_id = line.split()[0]
+                    subprocess.run(
+                        ["pactl", "move-sink-input", input_id, self.pulse_sink],
+                        capture_output=True
+                    )
+                    logger.info(f"Moved audio stream {input_id} to {self.pulse_sink}")
+        except Exception as e:
+            logger.warning(f"Could not move sink inputs: {e}")
+
         # Record from PulseAudio monitor source (captures what Chrome plays)
         monitor_source = f"{self.pulse_sink}.monitor"
 
@@ -89,10 +108,10 @@ class MeetBot:
             "-f", "pulse", "-i", monitor_source,
             "-ar", "16000", "-ac", "1", "-b:a", "64k",
             str(self.audio_path)
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
         self._recording = True
-        logger.info(f"🔴 Recording started → {self.audio_path}")
+        logger.info(f"🔴 Recording from {monitor_source} → {self.audio_path}")
 
     def _stop_recording(self):
         if self.ffmpeg_proc:
@@ -116,7 +135,7 @@ class MeetBot:
                 "--disable-software-rasterizer",
                 "--disable-blink-features=AutomationControlled",
                 "--incognito",
-                f"--alsa-output-device=pulse:{self.pulse_sink}",
+                "--autoplay-policy=no-user-gesture-required",
                 "--use-fake-ui-for-media-stream",
                 "--use-fake-device-for-media-stream",
                 "--window-size=1280,720",
@@ -310,6 +329,29 @@ class MeetBot:
             raise RuntimeError("Could not find join button in Google Meet")
 
         await asyncio.sleep(5)
+
+        # Extract meeting title from the page
+        try:
+            title_el = await self.page.querySelector('[data-meeting-title]')
+            if title_el:
+                extracted = await self.page.evaluate('el => el.getAttribute("data-meeting-title")', title_el)
+                if extracted:
+                    self.meeting["title"] = extracted
+            if self.meeting["title"] in ("Reuniao", ""):
+                # Try other selectors
+                for sel in ['[data-call-id]', '[data-meeting-id]']:
+                    el = await self.page.querySelector(sel)
+                    if el:
+                        break
+                # Try page title
+                page_title = await self.page.title()
+                if page_title and "Meet" in page_title:
+                    clean = page_title.replace(" - Google Meet", "").strip()
+                    if clean and clean != "Google Meet":
+                        self.meeting["title"] = clean
+        except Exception:
+            pass
+
         logger.info(f"✅ Joined (or requested to join): {self.meeting['title']}")
 
     async def _join_meet(self):
