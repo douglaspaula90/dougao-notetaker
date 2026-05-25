@@ -1,12 +1,14 @@
 """
 main.py — Dougao Notetaker bot entrypoint.
-Watches for manual bot invocations via API and launches the Meet bot.
+Watches Google Calendar and launches the Meet bot for each meeting.
+Also exposes HTTP API for manual bot invocation.
 """
 
 import asyncio
 import logging
 import os
 from aiohttp import web
+from calendar_watcher import CalendarWatcher
 from meet_bot import MeetBot
 
 logging.basicConfig(
@@ -20,9 +22,23 @@ active_meetings: set[str] = set()
 API_KEY = os.environ.get("APP_API_KEY", "")
 
 
+async def on_meeting_start(meeting: dict):
+    meeting_id = meeting["id"]
+
+    if meeting_id in active_meetings:
+        logger.info(f"Already in meeting {meeting['title']}, skipping")
+        return
+
+    active_meetings.add(meeting_id)
+    try:
+        bot = MeetBot(meeting)
+        await bot.run()
+    finally:
+        active_meetings.discard(meeting_id)
+
+
 async def handle_join(request):
     """POST /join — manually trigger bot to join a meeting."""
-    # Auth check
     auth = request.headers.get("Authorization", "")
     if API_KEY and not auth.endswith(API_KEY):
         return web.json_response({"error": "Unauthorized"}, status=401)
@@ -61,9 +77,10 @@ async def handle_health(request):
 
 
 async def main():
-    logger.info("🎙️  Dougao Notetaker starting up (manual mode)...")
+    logger.info("🎙️  Dougao Notetaker starting up...")
     logger.info(f"   API backend : {os.environ.get('API_BASE', 'http://backend:8000/api')}")
 
+    # Start HTTP API for manual joins
     app = web.Application()
     app.router.add_post("/join", handle_join)
     app.router.add_get("/health", handle_health)
@@ -72,11 +89,12 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
-    logger.info("🚀 Bot API running on port 8080 (manual mode - waiting for /join requests)")
+    logger.info("🚀 Bot API running on port 8080")
 
-    # Keep running forever
-    while True:
-        await asyncio.sleep(3600)
+    # Start calendar watcher (automatic mode)
+    watcher = CalendarWatcher(on_meeting_start=on_meeting_start)
+    logger.info("📅 Calendar watcher active — bot will join all scheduled meetings")
+    await watcher.run()
 
 
 if __name__ == "__main__":
