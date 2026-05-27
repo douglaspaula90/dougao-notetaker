@@ -2,7 +2,8 @@
 // Handles audio capture from Google Meet tabs
 
 // Defaults — pode ser sobrescrito em chrome.storage.local pelo popup de Settings.
-const DEFAULT_API_BASE = "http://187.77.56.193:8000/api";
+// O backend nao e exposto direto; chamamos via proxy do frontend (nginx) na mesma porta 3010.
+const DEFAULT_API_BASE = "http://187.77.56.193:3010/api";
 
 async function getApiBase() {
   return new Promise(resolve => {

@@ -10,7 +10,10 @@
     "offscreen"
   ],
   "host_permissions": [
-    "https://meet.google.com/*"
+    "https://meet.google.com/*",
+    "http://187.77.56.193:3010/*",
+    "http://localhost:3010/*",
+    "http://localhost:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
