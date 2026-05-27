@@ -83,6 +83,7 @@ async function closeOffscreen() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.target === "offscreen") return false;
 
+  // Content script asking which tab it's in (used by the side panel).
   if (msg.action === "WHO_AM_I") {
     sendResponse({ tabId: sender.tab ? sender.tab.id : null });
     return false;
