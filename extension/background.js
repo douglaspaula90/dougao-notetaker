@@ -1,7 +1,16 @@
 // DougãoCast — Background Service Worker
 // Handles audio capture from Google Meet tabs
 
-const API_BASE = "https://YOUR_VPS_DOMAIN/api"; // 🔧 Change this!
+// Defaults — pode ser sobrescrito em chrome.storage.local pelo popup de Settings.
+const DEFAULT_API_BASE = "http://187.77.56.193:8000/api";
+
+async function getApiBase() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(["apiBase"], (res) => {
+      resolve((res && res.apiBase) || DEFAULT_API_BASE);
+    });
+  });
+}
 
 let mediaRecorder = null;
 let audioChunks = [];
@@ -106,19 +115,20 @@ async function stopRecording(meetingTitle, speakerNames = {}) {
 }
 
 async function uploadAudio(blob, title, speakerNames) {
+  const apiBase = await getApiBase();
   const formData = new FormData();
   formData.append("file", blob, "meeting.webm");
   formData.append("title", title || `Reunião ${new Date().toLocaleDateString("pt-BR")}`);
   formData.append("speaker_names", JSON.stringify(speakerNames));
 
-  const response = await fetch(`${API_BASE}/audio/upload`, {
+  const response = await fetch(`${apiBase}/audio/upload`, {
     method: "POST",
     body: formData
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Upload failed: ${err}`);
+    throw new Error(`Upload failed (${response.status}): ${err}`);
   }
 
   return await response.json();
