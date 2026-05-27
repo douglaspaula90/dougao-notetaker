@@ -27,5 +27,11 @@
   ],
   "action": {
     "default_popup": "popup.html"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidepanel.html", "sidepanel.js"],
+      "matches": ["https://meet.google.com/*"]
+    }
+  ]
 }
