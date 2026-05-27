@@ -7,22 +7,53 @@
 //   3) Offscreen calls navigator.mediaDevices.getUserMedia() with that streamId
 //      and records with MediaRecorder
 //   4) On stop, offscreen uploads the blob directly to the backend
+//
+// State persistence: MV3 service workers are killed after ~30s of inactivity.
+// We mirror recording state into chrome.storage.session so it survives that.
 
 const DEFAULT_API_BASE = "http://187.77.56.193:3010/api";
 const OFFSCREEN_PATH = "offscreen.html";
+const STATE_KEY = "recordingState";
 
-let recordingTabId = null;
-let meetingStartTime = null;
-let isRecording = false;
+// In-memory cache (mirrored to chrome.storage.session)
+let state = {
+  isRecording: false,
+  recordingTabId: null,
+  meetingStartTime: null
+};
 
-async function getApiBase() {
+// ── State persistence ───────────────────────────────────────────────────────
+async function loadState() {
   return new Promise(resolve => {
-    chrome.storage.local.get(["apiBase"], (res) => {
-      resolve((res && res.apiBase) || DEFAULT_API_BASE);
+    chrome.storage.session.get([STATE_KEY], (res) => {
+      if (res && res[STATE_KEY]) state = res[STATE_KEY];
+      resolve(state);
     });
   });
 }
 
+async function saveState() {
+  return new Promise(resolve => {
+    chrome.storage.session.set({ [STATE_KEY]: state }, resolve);
+  });
+}
+
+// Hydrate state on startup (when the worker wakes up).
+loadState();
+
+// ── Config ──────────────────────────────────────────────────────────────────
+async function getConfig() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(["apiBase", "apiKey"], (res) => {
+      resolve({
+        apiBase: (res && res.apiBase) || DEFAULT_API_BASE,
+        apiKey: (res && res.apiKey) || null
+      });
+    });
+  });
+}
+
+// ── Offscreen lifecycle ────────────────────────────────────────────────────
 async function hasOffscreen() {
   if (!chrome.runtime.getContexts) return false;
   const contexts = await chrome.runtime.getContexts({
@@ -44,17 +75,18 @@ async function closeOffscreen() {
   if (await hasOffscreen()) {
     try {
       await chrome.offscreen.closeDocument();
-    } catch (e) {
-      // Race: offscreen may have closed itself.
-    }
+    } catch (e) { /* race */ }
   }
 }
 
-// ── Messages from popup ─────────────────────────────────────────────────────
-
+// ── Messages ────────────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Messages addressed to the offscreen doc are not for us.
   if (msg && msg.target === "offscreen") return false;
+
+  if (msg.action === "WHO_AM_I") {
+    sendResponse({ tabId: sender.tab ? sender.tab.id : null });
+    return false;
+  }
 
   if (msg.action === "START_RECORDING") {
     startRecording(msg.tabId, msg.meetingTitle)
@@ -63,7 +95,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await cleanup();
         sendResponse({ ok: false, error: err.message });
       });
-    return true; // async
+    return true;
   }
 
   if (msg.action === "STOP_RECORDING") {
@@ -74,23 +106,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.action === "GET_STATUS") {
-    sendResponse({
-      isRecording,
-      tabId: recordingTabId,
-      duration: meetingStartTime
-        ? Math.floor((Date.now() - meetingStartTime) / 1000)
-        : 0
+    // Re-hydrate from session storage in case worker was suspended.
+    loadState().then(() => {
+      sendResponse({
+        isRecording: state.isRecording,
+        tabId: state.recordingTabId,
+        duration: state.meetingStartTime
+          ? Math.floor((Date.now() - state.meetingStartTime) / 1000)
+          : 0
+      });
     });
-    return false;
+    return true;
   }
 });
 
 // ── Recording ────────────────────────────────────────────────────────────────
-
 async function startRecording(tabId, title) {
-  if (isRecording) throw new Error("Already recording");
+  await loadState();
+  if (state.isRecording) throw new Error("Already recording");
 
-  // 1) Get a one-time media stream id bound to the target tab.
+  // 1) Stream id bound to the target tab
   const streamId = await new Promise((resolve, reject) => {
     chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
       if (chrome.runtime.lastError) {
@@ -103,10 +138,10 @@ async function startRecording(tabId, title) {
     });
   });
 
-  // 2) Open the offscreen document if not already open.
+  // 2) Offscreen document
   await ensureOffscreen();
 
-  // 3) Hand the streamId to the offscreen recorder.
+  // 3) Hand over the stream id
   const res = await chrome.runtime.sendMessage({
     target: "offscreen",
     action: "OFFSCREEN_START",
@@ -116,9 +151,12 @@ async function startRecording(tabId, title) {
     throw new Error(res && res.error ? res.error : "Offscreen start failed");
   }
 
-  recordingTabId = tabId;
-  meetingStartTime = Date.now();
-  isRecording = true;
+  state = {
+    isRecording: true,
+    recordingTabId: tabId,
+    meetingStartTime: Date.now()
+  };
+  await saveState();
 
   chrome.action.setBadgeText({ text: "REC", tabId });
   chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
@@ -126,44 +164,44 @@ async function startRecording(tabId, title) {
 }
 
 async function stopRecording(meetingTitle, speakerNames = {}) {
-  if (!isRecording) throw new Error("Not recording");
+  await loadState();
+  if (!state.isRecording) throw new Error("Not recording");
 
-  const apiBase = await getApiBase();
+  const cfg = await getConfig();
 
   try {
     const res = await chrome.runtime.sendMessage({
       target: "offscreen",
       action: "OFFSCREEN_STOP_AND_UPLOAD",
-      apiBase,
+      apiBase: cfg.apiBase,
+      apiKey: cfg.apiKey,
       title: meetingTitle,
       speakerNames
     });
     if (!res || !res.ok) {
       throw new Error(res && res.error ? res.error : "Offscreen stop failed");
     }
-    return res; // { ok, meeting_id, ... }
+    return res;
   } finally {
     await cleanup();
   }
 }
 
 async function cleanup() {
-  if (recordingTabId !== null) {
-    try {
-      chrome.action.setBadgeText({ text: "", tabId: recordingTabId });
-    } catch (e) { /* ignore */ }
+  const tabId = state.recordingTabId;
+  if (tabId !== null) {
+    try { chrome.action.setBadgeText({ text: "", tabId }); } catch (e) {}
   }
-  recordingTabId = null;
-  meetingStartTime = null;
-  isRecording = false;
+  state = { isRecording: false, recordingTabId: null, meetingStartTime: null };
+  await saveState();
   await closeOffscreen();
   console.log("[bg] cleaned up");
 }
 
 // ── Auto-detect meeting end ───────────────────────────────────────────────────
-
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  if (tabId === recordingTabId && isRecording) {
+  await loadState();
+  if (tabId === state.recordingTabId && state.isRecording) {
     console.log("[bg] Meet tab closed, finalizing recording...");
     try {
       await stopRecording("Reunião encerrada");

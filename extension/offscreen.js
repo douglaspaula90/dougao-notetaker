@@ -18,7 +18,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.action === "OFFSCREEN_STOP_AND_UPLOAD") {
-    stopAndUpload(msg.apiBase, msg.title, msg.speakerNames || {})
+    stopAndUpload(msg.apiBase, msg.title, msg.speakerNames || {}, msg.apiKey)
       .then(result => sendResponse({ ok: true, ...result }))
       .catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
@@ -61,7 +61,7 @@ async function startCapture(streamId) {
   console.log("[offscreen] recording started, streamId=", streamId);
 }
 
-async function stopAndUpload(apiBase, title, speakerNames) {
+async function stopAndUpload(apiBase, title, speakerNames, apiKey) {
   if (!mediaRecorder) throw new Error("Not recording");
 
   // Wait for the final dataavailable + stop event.
@@ -97,8 +97,12 @@ async function stopAndUpload(apiBase, title, speakerNames) {
   );
   formData.append("speaker_names", JSON.stringify(speakerNames || {}));
 
+  const headers = {};
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+
   const response = await fetch(`${apiBase}/audio/upload`, {
     method: "POST",
+    headers,
     body: formData
   });
 
