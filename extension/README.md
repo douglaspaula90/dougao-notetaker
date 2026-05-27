@@ -25,9 +25,9 @@ Se você fechar a aba do Meet antes de parar manualmente, a extensão detecta e 
 
 ## Configuração de URL
 
-Os defaults apontam para a VPS de produção:
+Os defaults apontam para a VPS de produção (ambos via frontend nginx, que faz proxy de `/api` pro backend interno):
 
-- API: `http://187.77.56.193:8000/api`
+- API: `http://187.77.56.193:3010/api`
 - Dashboard: `http://187.77.56.193:3010`
 
 Para sobrescrever (ex: rodar contra `localhost` em dev), abra o DevTools do service worker da extensão (`chrome://extensions/` → "Service worker") e rode:
@@ -41,19 +41,9 @@ chrome.storage.local.set({
 
 ## Pré-requisitos do backend
 
-O backend precisa estar exposto na porta 8000 do host da VPS. O `docker-compose.yml` foi ajustado para expor `8000:8000`. Se você usa Coolify, garanta que a porta 8000 está aberta no firewall.
+O backend NÃO precisa estar exposto externamente. A extensão chama `http://VPS:3010/api/...` e o nginx do frontend faz proxy interno para `http://backend:8000/api/...`. A porta 3010 já está exposta pelo Coolify.
 
-Também é preciso CORS liberado para `chrome-extension://*` em `/api/audio/upload`. Se ainda não está, adicione no FastAPI:
-
-```python
-from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["chrome-extension://*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
+CORS já está liberado no backend (`allow_origins=["*"]` em `backend/main.py`).
 
 ## Limitações conhecidas
 

@@ -1,6 +1,6 @@
 // DougãoCast popup.js
 const DEFAULT_DASHBOARD_URL = "http://187.77.56.193:3010";
-const DEFAULT_API_BASE = "http://187.77.56.193:8000/api";
+const DEFAULT_API_BASE = "http://187.77.56.193:3010/api";
 
 async function loadConfig() {
   return new Promise(resolve => {

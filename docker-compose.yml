@@ -6,8 +6,8 @@ services:
     build: ./backend
     container_name: dougao-backend
     restart: unless-stopped
-    ports:
-      - "8000:8000"   # Exposto pra que a extensao Chrome consiga chamar /api diretamente
+    # Backend NAO e exposto externamente (a porta 8000 do host ja e usada pelo painel Coolify).
+    # A extensao Chrome chama /api atraves do frontend (porta 3010), que faz proxy via nginx.
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
