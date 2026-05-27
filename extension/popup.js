@@ -1,5 +1,17 @@
 // DougãoCast popup.js
-const DASHBOARD_URL = "https://YOUR_VPS_DOMAIN"; // 🔧 Change this!
+const DEFAULT_DASHBOARD_URL = "http://187.77.56.193:3010";
+const DEFAULT_API_BASE = "http://187.77.56.193:8000/api";
+
+async function loadConfig() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(["dashboardUrl", "apiBase"], (res) => {
+      resolve({
+        dashboardUrl: (res && res.dashboardUrl) || DEFAULT_DASHBOARD_URL,
+        apiBase: (res && res.apiBase) || DEFAULT_API_BASE,
+      });
+    });
+  });
+}
 
 let timerInterval = null;
 let durationSeconds = 0;
@@ -18,10 +30,12 @@ const notInMeet  = document.getElementById("not-in-meet");
 const mainUi     = document.getElementById("main-ui");
 const dashLink   = document.getElementById("dashboard-link");
 
-dashLink.href = DASHBOARD_URL;
-
 // ── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
+  // Configurar URL do dashboard a partir do storage (override do default)
+  const cfg = await loadConfig();
+  dashLink.href = cfg.dashboardUrl;
+
   const tab = await getActiveMeetTab();
 
   if (!tab) {

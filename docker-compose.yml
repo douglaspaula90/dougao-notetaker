@@ -6,6 +6,8 @@ services:
     build: ./backend
     container_name: dougao-backend
     restart: unless-stopped
+    ports:
+      - "8000:8000"   # Exposto pra que a extensao Chrome consiga chamar /api diretamente
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}

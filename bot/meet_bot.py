@@ -335,27 +335,9 @@ class MeetBot:
 
         await asyncio.sleep(5)
 
-        # Extract meeting title from the page
-        try:
-            title_el = await self.page.querySelector('[data-meeting-title]')
-            if title_el:
-                extracted = await self.page.evaluate('el => el.getAttribute("data-meeting-title")', title_el)
-                if extracted:
-                    self.meeting["title"] = extracted
-            if self.meeting["title"] in ("Reuniao", ""):
-                # Try other selectors
-                for sel in ['[data-call-id]', '[data-meeting-id]']:
-                    el = await self.page.querySelector(sel)
-                    if el:
-                        break
-                # Try page title
-                page_title = await self.page.title()
-                if page_title and "Meet" in page_title:
-                    clean = page_title.replace(" - Google Meet", "").strip()
-                    if clean and clean != "Google Meet":
-                        self.meeting["title"] = clean
-        except Exception:
-            pass
+        # Refinar titulo da reuniao — SO se o que veio do Calendar for generico.
+        # Prioridade: Calendar event.summary (ja em self.meeting["title"]) > document.title > data-meeting-title > codigo da sala
+        await self._refine_meeting_title()
 
         logger.info(f"✅ Joined (or requested to join): {self.meeting['title']}")
 
@@ -470,45 +452,129 @@ class MeetBot:
 
         return False
 
+    # ── Meeting title refinement ────────────────────────────────────────────
+
+    @staticmethod
+    def _looks_like_room_code(title: str) -> bool:
+        """Heuristic: title is a Meet room code like 'abc-defg-hij' (with optional 'Reunião ' prefix)."""
+        if not title:
+            return False
+        import re
+        return bool(re.search(r"\b[a-z]{3}-[a-z]{4}-[a-z]{3}\b", title.lower()))
+
+    async def _refine_meeting_title(self):
+        """
+        Refina self.meeting["title"] APENAS se o titulo atual e generico.
+        Preserva o titulo vindo do Google Calendar (event.summary) quando ele e bom.
+        """
+        generic = {"Reunião sem título", "Reunião", "Reuniao", "Meeting", "", None}
+        current = self.meeting.get("title")
+
+        # Se ja temos um titulo bom do Calendar, mantem
+        if current and current not in generic and not self._looks_like_room_code(current):
+            logger.info(f"Mantendo titulo do Calendar: {current}")
+            return
+
+        candidates = []
+
+        # Fonte 1: document.title (Meet costuma usar o nome do evento aqui)
+        try:
+            page_title = await self.page.title()
+            if page_title:
+                clean = page_title
+                for suffix in (" - Google Meet", " | Google Meet", " — Google Meet"):
+                    clean = clean.replace(suffix, "")
+                clean = clean.strip()
+                if clean and clean != "Google Meet":
+                    candidates.append(("document.title", clean))
+        except Exception as e:
+            logger.warning(f"document.title falhou: {e}")
+
+        # Fonte 2: atributo data-meeting-title
+        try:
+            title_el = await self.page.querySelector('[data-meeting-title]')
+            if title_el:
+                extracted = await self.page.evaluate(
+                    'el => el.getAttribute("data-meeting-title")', title_el
+                )
+                if extracted and extracted.strip():
+                    candidates.append(("data-meeting-title", extracted.strip()))
+        except Exception:
+            pass
+
+        # Escolhe o primeiro candidato que nao e codigo de sala
+        for source, cand in candidates:
+            if not self._looks_like_room_code(cand):
+                logger.info(f"Refinado titulo via {source}: {cand}")
+                self.meeting["title"] = cand
+                return
+
+        # Ultimo recurso: codigo da sala
+        if not self.meeting.get("title") or self.meeting["title"] in generic:
+            import re
+            url = self.meeting.get("meet_url", "")
+            m = re.search(r"meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})", url)
+            if m:
+                self.meeting["title"] = f"Reunião {m.group(1).upper()}"
+                logger.info(f"Fallback titulo via codigo da sala: {self.meeting['title']}")
+
     # ── Wait for meeting to end ─────────────────────────────────────────────
 
     async def _wait_for_meeting_end(self):
         """
         Poll the page to detect when the meeting ends:
-        - All other participants leave
+        - All other participants leave (linger N seconds first)
         - Meeting end screen appears
-        - Max duration exceeded (based on calendar end time)
+        - Past scheduled end time + 15min buffer (Calendar-aware)
+        - Absolute hard cap (default 4h) to avoid runaway bot
         """
-        meeting_end = self.meeting["end"]
+        meeting_end = self.meeting.get("end")
         linger_started = None
+        start_loop_ts = asyncio.get_event_loop().time()
+        hard_cap_seconds = int(os.getenv("BOT_HARD_CAP_SECONDS", str(4 * 60 * 60)))
 
         logger.info("⏳ Waiting for meeting to end...")
 
         while True:
             await asyncio.sleep(15)
 
-            # Check if meeting already ended (end screen shown)
+            # 1) Hard cap absoluto (cobre caso meeting_end seja None ou meet travar)
+            elapsed = asyncio.get_event_loop().time() - start_loop_ts
+            if elapsed > hard_cap_seconds:
+                logger.warning(
+                    f"Bot atingiu hard cap de {hard_cap_seconds}s. Saindo."
+                )
+                break
+
+            # 2) End screen detectado
             if await self._is_meeting_ended():
                 logger.info("Meeting end screen detected")
                 break
 
-            # Check if we're past the scheduled end time (+15min buffer)
+            # 3) Passou do horario agendado + 15min (so quando temos meeting_end)
             now = datetime.now(tz=timezone.utc)
             if meeting_end and (now - meeting_end).total_seconds() > 900:
                 logger.info("Meeting exceeded scheduled end time, leaving")
                 break
 
-            # Check participant count
+            # 4) Esvaziamento — bot e o unico restante
             participant_count = await self._get_participant_count()
-            if participant_count <= 1:  # only the bot
+            if participant_count <= 1:
                 if linger_started is None:
                     linger_started = asyncio.get_event_loop().time()
-                    logger.info(f"Alone in meeting, will leave in {LINGER_AFTER_EMPTY_SECS}s")
+                    logger.info(
+                        f"Alone in meeting (count={participant_count}), "
+                        f"will leave in {LINGER_AFTER_EMPTY_SECS}s if no one joins"
+                    )
                 elif asyncio.get_event_loop().time() - linger_started > LINGER_AFTER_EMPTY_SECS:
-                    logger.info("Meeting appears empty, leaving")
+                    logger.info("Meeting appears empty for linger period, leaving")
                     break
             else:
-                linger_started = None  # reset if others rejoin
+                if linger_started is not None:
+                    logger.info(
+                        f"Participants returned ({participant_count}), canceling exit"
+                    )
+                linger_started = None
 
     async def _is_meeting_ended(self) -> bool:
         # First check if we're on a "waiting to be admitted" screen — NOT ended
@@ -558,15 +624,64 @@ class MeetBot:
         return False
 
     async def _get_participant_count(self) -> int:
+        """
+        Conta participantes na sala. Meet muda o DOM com frequencia, entao
+        tentamos varios metodos. Retorna 99 se nada funciona (assume nao-vazio
+        pra evitar saida prematura).
+        """
+        # Metodo 1: contar elementos de participante (mais robusto que o badge)
         try:
-            # Meet shows participant count in a badge
+            count = await self.page.evaluate("""
+                () => {
+                    const sels = [
+                        '[data-participant-id]',
+                        '[data-self-name]',
+                        'div[jsname="dnLHj"]',
+                        'div[data-allocation-index]',
+                    ];
+                    let max = 0;
+                    for (const s of sels) {
+                        const n = document.querySelectorAll(s).length;
+                        if (n > max) max = n;
+                    }
+                    return max;
+                }
+            """)
+            if isinstance(count, int) and count > 0:
+                return count
+        except Exception as e:
+            logger.debug(f"Participant DOM count falhou: {e}")
+
+        # Metodo 2: aria-label com numero (ex: "Show everyone (3)")
+        try:
+            count = await self.page.evaluate(r"""
+                () => {
+                    const els = document.querySelectorAll(
+                        '[aria-label*="participant"], [aria-label*="participante"], [aria-label*="everyone"], [aria-label*="todos"]'
+                    );
+                    for (const el of els) {
+                        const m = (el.getAttribute('aria-label') || '').match(/\d+/);
+                        if (m) return parseInt(m[0], 10);
+                    }
+                    return 0;
+                }
+            """)
+            if isinstance(count, int) and count > 0:
+                return count
+        except Exception:
+            pass
+
+        # Metodo 3: badge legado (raramente bate hoje)
+        try:
             el = await self.page.querySelector('[data-participant-count], [data-count]')
             if el:
                 text = await self.page.evaluate("el => el.textContent", el)
-                return int(text.strip())
+                if text and text.strip().isdigit():
+                    return int(text.strip())
         except Exception:
             pass
-        return 99  # unknown = assume not empty
+
+        return 99  # desconhecido = assume nao vazio
 
     # ── Cleanup & upload ────────────────────────────────────────────────────
 
