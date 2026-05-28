@@ -21,20 +21,43 @@
     return [...names];
   }
 
-  function getMeetingTitle() {
-    const titleEl = document.querySelector('[data-meeting-title]') ||
-                    document.querySelector('.u6vdEc');
-    if (titleEl) return titleEl.textContent.trim();
+  // True iff string contains a Meet room code like "abc-defg-hij".
+  function _hasRoomCode(s) {
+    return /\b[a-z]{3}-[a-z]{4}-[a-z]{3}\b/i.test(s || "");
+  }
 
+  // Reject candidates we've seen the Meet DOM produce that are garbage:
+  // - concatenated room codes ("fzw-yvzp-gjdfzw-yvzp-gjdmeeting_room…")
+  // - "meeting_room" / "Esta cha…" debris
+  // - empty / too short
+  function _isJunkTitle(s) {
+    if (!s || s.trim().length < 2) return true;
+    if (/meeting_room|reunion_room/i.test(s)) return true;
+    if (/([a-z]{3}-[a-z]{4}-[a-z]{3}).*\1/i.test(s)) return true; // code twice
+    return false;
+  }
+
+  function getMeetingTitle() {
+    // 1) document.title is the most stable signal on Meet — it carries the
+    //    Calendar event name when the meeting came from an invite.
     if (document.title && document.title !== "Google Meet") {
-      const clean = document.title
-        .replace(" - Google Meet", "")
-        .replace(" | Google Meet", "")
-        .replace(" — Google Meet", "")
-        .trim();
-      if (clean && clean !== "Google Meet") return clean;
+      const clean = document.title.replace(/ [-—|] Google Meet$/i, "").trim();
+      if (clean && clean !== "Google Meet" && !_isJunkTitle(clean) && !_hasRoomCode(clean)) {
+        return clean;
+      }
     }
 
+    // 2) data-meeting-title attribute (cleaner than visible DOM text)
+    const titleEl = document.querySelector('[data-meeting-title]');
+    if (titleEl) {
+      const attr = titleEl.getAttribute('data-meeting-title');
+      if (attr && !_isJunkTitle(attr) && !_hasRoomCode(attr)) return attr.trim();
+    }
+
+    // 3) Last resort: room code from URL.
+    //    We deliberately skip the `.u6vdEc` DOM lookup the previous version
+    //    used — it has been observed to concatenate duplicated room codes
+    //    with i18n debris ("…meeting_roomEsta cha…").
     const match = location.pathname.match(/\/([a-z]{3}-[a-z]{4}-[a-z]{3})/);
     if (match) return `Reunião ${match[1].toUpperCase()}`;
     return `Reunião ${new Date().toLocaleDateString('pt-BR')}`;

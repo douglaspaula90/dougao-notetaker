@@ -50,11 +50,33 @@ export default function MeetingDetail({ meeting, onDelete, onBack }) {
   }
 
   if (meeting.status === "error") {
+    const stageLabel = {
+      upload: "Recebimento do áudio",
+      transcription: "Transcrição (Whisper)",
+      diarization: "Identificação de speakers (pyannote)",
+      summary: "Resumo (GPT)",
+      email: "Envio de e-mail",
+    }[meeting.error_stage] || "Processamento";
     return (
       <div className="processing-state">
         <div style={{ fontSize: 48 }}>❌</div>
         <h3>Erro no processamento</h3>
-        <p>Ocorreu um erro ao processar esta reunião. Verifique os logs do servidor.</p>
+        <p style={{ marginBottom: 8 }}><strong>Etapa que falhou:</strong> {stageLabel}</p>
+        {meeting.error_message && (
+          <pre style={{
+            background: "#1a1a2e",
+            border: "1px solid #2a2a40",
+            borderRadius: 8,
+            padding: 12,
+            fontSize: 12,
+            color: "#fca5a5",
+            textAlign: "left",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            maxWidth: 600,
+            margin: "8px auto"
+          }}>{meeting.error_message}</pre>
+        )}
         <button className="btn danger" onClick={() => onDelete(meeting.id)}>Excluir</button>
       </div>
     );

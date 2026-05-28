@@ -20,9 +20,20 @@ async def create_tables():
                 transcript TEXT,                   -- JSON array of segments
                 summary TEXT,
                 action_items TEXT DEFAULT '[]',    -- JSON array
+                error_message TEXT,                -- populated when status='error'
+                error_stage TEXT,                  -- which step broke: upload|transcription|diarization|summary|email
                 created_at TEXT DEFAULT (datetime('now'))
             )
         """)
+        # Idempotent migration: add columns if they don't exist on old DBs.
+        for ddl in (
+            "ALTER TABLE meetings ADD COLUMN error_message TEXT",
+            "ALTER TABLE meetings ADD COLUMN error_stage TEXT",
+        ):
+            try:
+                await db.execute(ddl)
+            except Exception:
+                pass  # Column already exists
         await db.commit()
 
 async def get_db():
