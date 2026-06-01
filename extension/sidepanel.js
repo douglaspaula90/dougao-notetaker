@@ -1,12 +1,15 @@
-// DougãoCast — Side panel injected into Google Meet
-// Runs inside an iframe (chrome-extension://) embedded by content.js.
+// DougãoCast — Side Panel (chrome.sidePanel API)
+//
+// Opens when the user clicks the toolbar icon (openPanelOnActionClick=true
+// in background.js). Because that click is a user gesture targeting our
+// extension, tabCapture is allowed from anywhere in this panel.
 
 const DEFAULT_DASHBOARD_URL = "http://187.77.56.193:3010";
 const DEFAULT_API_BASE = "http://187.77.56.193:3010/api";
 
 let timerInterval = null;
 let durationSeconds = 0;
-let parentTabId = null;
+let activeTab = null;
 let meetTitleHint = null;
 
 // ── DOM refs ────────────────────────────────────────────────────────────────
@@ -45,27 +48,60 @@ document.querySelectorAll(".tab").forEach(btn => {
   });
 });
 
+// ── Active tab discovery ────────────────────────────────────────────────────
+async function getActiveMeetTab() {
+  return new Promise(resolve => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const tab = tabs[0];
+      if (tab && tab.url && tab.url.includes("meet.google.com")) {
+        resolve(tab);
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function fetchMeetInfo(tabId) {
+  return new Promise(resolve => {
+    try {
+      chrome.tabs.sendMessage(tabId, { action: "GET_MEET_INFO" }, (info) => {
+        if (chrome.runtime.lastError) {
+          // Content script may not be loaded yet (e.g. pre-join lobby).
+          resolve(null);
+        } else {
+          resolve(info || null);
+        }
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
 // ── Init ────────────────────────────────────────────────────────────────────
 async function init() {
   const cfg = await loadConfig();
   dashLink.href = cfg.dashboardUrl;
+  minLink.style.display = "none"; // Side Panel can be closed from the browser UI
 
-  // Listen for the host content script to tell us our tab id + meet info
-  window.addEventListener("message", (event) => {
-    if (!event.data || event.data.source !== "dougao-host") return;
-    if (event.data.action === "HOST_INFO") {
-      parentTabId = event.data.tabId;
-      meetTitleHint = event.data.title;
-      if (meetTitleHint && !titleInput.value) {
-        titleInput.placeholder = meetTitleHint;
-      }
-    }
-  });
+  activeTab = await getActiveMeetTab();
+  if (!activeTab) {
+    showMessage(
+      "Abra uma reunião no Google Meet primeiro, depois reabra este painel.",
+      "info"
+    );
+    btnStart.disabled = true;
+    return;
+  }
 
-  // Ask the host (content.js in the Meet page) for info
-  window.parent.postMessage({ source: "dougao-sidepanel", action: "REQUEST_HOST_INFO" }, "*");
+  const info = await fetchMeetInfo(activeTab.id);
+  if (info && info.title) {
+    meetTitleHint = info.title;
+    titleInput.placeholder = info.title;
+  }
 
-  // Check if we're already recording (e.g. user closed/reopened the panel mid-recording)
+  // Re-attach to an in-progress recording (e.g. user closed/reopened panel)
   chrome.runtime.sendMessage({ action: "GET_STATUS" }, (status) => {
     if (status && status.isRecording) {
       setRecordingState(true, status.duration || 0);
@@ -111,21 +147,21 @@ function clearMessage() {
 btnStart.addEventListener("click", async () => {
   clearMessage();
 
-  if (!parentTabId) {
-    // Try again to get the host info synchronously
-    window.parent.postMessage({ source: "dougao-sidepanel", action: "REQUEST_HOST_INFO" }, "*");
-    showMessage("Carregando contexto da aba do Meet…", "info");
-    setTimeout(() => btnStart.click(), 500);
+  // Re-discover the active tab in case the user switched tabs since opening.
+  activeTab = await getActiveMeetTab();
+  if (!activeTab) {
+    showMessage("Foque uma aba do Google Meet primeiro.", "error");
     return;
   }
 
-  const title = titleInput.value.trim() || meetTitleHint || `Reunião ${new Date().toLocaleDateString("pt-BR")}`;
+  const title = titleInput.value.trim() || meetTitleHint
+    || `Reunião ${new Date().toLocaleDateString("pt-BR")}`;
 
   btnStart.disabled = true;
   btnStart.textContent = "Iniciando…";
 
   chrome.runtime.sendMessage(
-    { action: "START_RECORDING", tabId: parentTabId, meetingTitle: title },
+    { action: "START_RECORDING", tabId: activeTab.id, meetingTitle: title },
     (res) => {
       btnStart.disabled = false;
       btnStart.textContent = "⏺ Iniciar Gravação";
@@ -133,7 +169,16 @@ btnStart.addEventListener("click", async () => {
         setRecordingState(true);
         showMessage("✅ Gravação iniciada!", "success");
       } else {
-        showMessage(`Erro: ${res?.error || "Falha ao iniciar"}`, "error");
+        const err = (res && res.error) || "Falha ao iniciar";
+        if (/not been invoked|activeTab/i.test(err)) {
+          showMessage(
+            "O Chrome bloqueou a captura porque a extensão ainda não foi 'invocada' nessa aba. " +
+            "Feche este painel, clique no ícone 🎙️ DougãoCast na barra de novo e tente outra vez.",
+            "error"
+          );
+        } else {
+          showMessage(`Erro: ${err}`, "error");
+        }
       }
     }
   );
@@ -141,7 +186,8 @@ btnStart.addEventListener("click", async () => {
 
 btnStop.addEventListener("click", async () => {
   clearMessage();
-  const title = titleInput.value.trim() || meetTitleHint || `Reunião ${new Date().toLocaleDateString("pt-BR")}`;
+  const title = titleInput.value.trim() || meetTitleHint
+    || `Reunião ${new Date().toLocaleDateString("pt-BR")}`;
 
   btnStop.disabled = true;
   btnStop.textContent = "Enviando…";
@@ -154,26 +200,22 @@ btnStop.addEventListener("click", async () => {
       btnStop.textContent = "⏹ Finalizar e Enviar";
       setRecordingState(false);
       if (res && res.ok) {
-        showMessage(`✅ Enviado! Processando transcrição…<br><small>ID: ${res.meeting_id}</small>`, "success");
+        showMessage(
+          `✅ Enviado! Processando transcrição…<br><small>ID: ${res.meeting_id}</small>`,
+          "success"
+        );
       } else {
-        showMessage(`Erro: ${res?.error || "Falha ao enviar"}`, "error");
+        showMessage(`Erro: ${(res && res.error) || "Falha ao enviar"}`, "error");
       }
     }
   );
 });
 
-// Prompt buttons — wired but disabled until SAL-104 backend is ready
+// Prompt-suggestion buttons (still placeholders until SAL-104 backend lands)
 document.querySelectorAll(".prompt-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    // Placeholder behavior — when SAL-104 lands, this will POST to /meetings/{id}/chat
     showMessage("Chat IA estará disponível em breve (SAL-104).", "info");
   });
-});
-
-// Minimize: tell the host content script to collapse
-minLink.addEventListener("click", (e) => {
-  e.preventDefault();
-  window.parent.postMessage({ source: "dougao-sidepanel", action: "TOGGLE_COLLAPSE" }, "*");
 });
 
 init();

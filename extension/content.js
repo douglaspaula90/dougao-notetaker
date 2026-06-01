@@ -1,9 +1,17 @@
 // DougãoCast — Content Script
-// Injects the side panel into Google Meet pages and bridges messages between
-// the iframe (sidepanel.html) and the extension service worker.
+//
+// Lives inside meet.google.com tabs. Its only jobs now are:
+//   1) Extract meeting title + participants from the Meet DOM
+//   2) Answer GET_MEET_INFO requests from the side panel / popup
+//
+// The 1.0.x version also injected a fake side panel as an iframe, but that
+// produced the "Extension has not been invoked" error because tabCapture
+// can only be initiated from a context that the user has explicitly invoked
+// (the toolbar action). We now use the real chrome.sidePanel API instead,
+// so this script no longer touches the DOM.
 
 (function () {
-  // ── Meet info helpers ──────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
   function getParticipants() {
     const names = new Set();
     const selectors = [
@@ -55,120 +63,14 @@
     }
 
     // 3) Last resort: room code from URL.
-    //    We deliberately skip the `.u6vdEc` DOM lookup the previous version
-    //    used — it has been observed to concatenate duplicated room codes
-    //    with i18n debris ("…meeting_roomEsta cha…").
+    //    We deliberately skip the `.u6vdEc` DOM lookup the old version used —
+    //    it concatenated duplicated room codes with i18n debris.
     const match = location.pathname.match(/\/([a-z]{3}-[a-z]{4}-[a-z]{3})/);
     if (match) return `Reunião ${match[1].toUpperCase()}`;
     return `Reunião ${new Date().toLocaleDateString('pt-BR')}`;
   }
 
-  function isInMeeting() {
-    return /\/[a-z]{3}-[a-z]{4}-[a-z]{3}/i.test(location.pathname);
-  }
-
-  // ── Side panel injection ───────────────────────────────────────────────────
-  const CONTAINER_ID = "dougao-sidepanel-container";
-  const TOGGLE_ID = "dougao-sidepanel-toggle";
-  let collapsed = false;
-  let cachedTabId = null;
-
-  function injectSidePanel() {
-    if (document.getElementById(CONTAINER_ID)) return;
-    if (!isInMeeting()) return;
-
-    const container = document.createElement("div");
-    container.id = CONTAINER_ID;
-    Object.assign(container.style, {
-      position: "fixed",
-      top: "60px",
-      right: "0",
-      width: "360px",
-      height: "calc(100vh - 80px)",
-      zIndex: "9999",
-      boxShadow: "-4px 0 16px rgba(0,0,0,0.4)",
-      transition: "transform 0.25s ease",
-      borderRadius: "8px 0 0 8px",
-      overflow: "hidden"
-    });
-
-    const iframe = document.createElement("iframe");
-    iframe.src = chrome.runtime.getURL("sidepanel.html");
-    iframe.id = "dougao-sidepanel-iframe";
-    Object.assign(iframe.style, {
-      width: "100%",
-      height: "100%",
-      border: "none",
-      display: "block"
-    });
-    container.appendChild(iframe);
-
-    const toggle = document.createElement("button");
-    toggle.id = TOGGLE_ID;
-    toggle.textContent = "🎙️";
-    toggle.title = "Mostrar/ocultar DougãoCast";
-    Object.assign(toggle.style, {
-      position: "fixed",
-      top: "100px",
-      right: "360px",
-      zIndex: "10000",
-      width: "36px",
-      height: "36px",
-      border: "none",
-      borderRadius: "10px 0 0 10px",
-      background: "#6366f1",
-      color: "white",
-      fontSize: "18px",
-      cursor: "pointer",
-      boxShadow: "-2px 2px 8px rgba(0,0,0,0.3)",
-      transition: "right 0.25s ease"
-    });
-    toggle.addEventListener("click", toggleCollapse);
-
-    document.body.appendChild(container);
-    document.body.appendChild(toggle);
-
-    console.log("[DougãoCast] side panel injected");
-  }
-
-  function toggleCollapse() {
-    collapsed = !collapsed;
-    const container = document.getElementById(CONTAINER_ID);
-    const toggle = document.getElementById(TOGGLE_ID);
-    if (!container || !toggle) return;
-    container.style.transform = collapsed ? "translateX(100%)" : "translateX(0)";
-    toggle.style.right = collapsed ? "0" : "360px";
-  }
-
-  // ── Bridge: iframe ↔ extension service worker ──────────────────────────────
-  window.addEventListener("message", async (event) => {
-    if (!event.data || event.data.source !== "dougao-sidepanel") return;
-
-    if (event.data.action === "REQUEST_HOST_INFO") {
-      if (!cachedTabId) {
-        try {
-          const res = await chrome.runtime.sendMessage({ action: "WHO_AM_I" });
-          cachedTabId = (res && res.tabId) || null;
-        } catch (e) { /* ignore */ }
-      }
-      const iframe = document.getElementById("dougao-sidepanel-iframe");
-      if (iframe && iframe.contentWindow) {
-        iframe.contentWindow.postMessage({
-          source: "dougao-host",
-          action: "HOST_INFO",
-          tabId: cachedTabId,
-          title: getMeetingTitle(),
-          participants: getParticipants()
-        }, "*");
-      }
-    }
-
-    if (event.data.action === "TOGGLE_COLLAPSE") {
-      toggleCollapse();
-    }
-  });
-
-  // Legacy popup support
+  // ── Message bridge ─────────────────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "GET_MEET_INFO") {
       sendResponse({
@@ -176,15 +78,7 @@
         title: getMeetingTitle(),
         url: location.href
       });
+      return false;
     }
   });
-
-  // ── Bootstrap ──────────────────────────────────────────────────────────────
-  // Meet is a SPA — re-check on every DOM mutation.
-  const observer = new MutationObserver(() => {
-    if (isInMeeting()) injectSidePanel();
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
-
-  if (isInMeeting()) injectSidePanel();
 })();
