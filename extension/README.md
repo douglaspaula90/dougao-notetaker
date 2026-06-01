@@ -12,16 +12,18 @@ Resolve o problema da gravação via PulseAudio no bot headless (que vinha em si
 4. Selecione a pasta `extension/` deste repo
 5. Fixe a extensão na barra (alfinete)
 
-## Uso
+## Uso (v1.1+ usa Side Panel oficial do Chrome)
 
 1. Entre em uma reunião no Google Meet
-2. Clique no ícone da extensão
+2. Clique no ícone 🎙️ DougãoCast na barra do Chrome — abre o **painel lateral oficial** do Chrome no lado direito
 3. (Opcional) Edite o nome da reunião no campo
 4. Clique em **"⏺ Iniciar Gravação"**
 5. Ao fim da reunião, clique em **"⏹ Finalizar e Enviar"**
 6. A extensão faz upload para `/api/audio/upload` do backend
 
 Se você fechar a aba do Meet antes de parar manualmente, a extensão detecta e envia automaticamente.
+
+> **Por que Side Panel API?** Versões 1.0.x usavam um iframe injetado no DOM do Meet, mas isso quebrava com `chrome.tabCapture` (Chrome só permite captura quando o usuário "invoca" a extensão via clique no ícone). O Side Panel oficial resolve isso porque a abertura conta como invocação.
 
 ## Configuração de URL
 

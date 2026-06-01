@@ -41,6 +41,22 @@ async function saveState() {
 // Hydrate state on startup (when the worker wakes up).
 loadState();
 
+// Clicking the toolbar icon opens the Side Panel (instead of a popup).
+// This gives us a user gesture in the panel that satisfies tabCapture's
+// "extension has been invoked" requirement — which is what broke before.
+chrome.runtime.onInstalled.addListener(() => {
+  try {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (e) {
+    console.warn("[bg] sidePanel.setPanelBehavior failed:", e);
+  }
+});
+// Also re-apply on service-worker startup (setPanelBehavior persists, but
+// being explicit is cheap insurance for users upgrading from 1.0.x).
+try {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+} catch (e) { /* ignored */ }
+
 // ── Config ──────────────────────────────────────────────────────────────────
 async function getConfig() {
   return new Promise(resolve => {
