@@ -53,6 +53,7 @@ export default function MeetingDetail({ meeting, onDelete, onBack }) {
     const stageLabel = {
       upload: "Recebimento do áudio",
       transcription: "Transcrição (Whisper)",
+      no_content: "Áudio sem conteúdo (silêncio/vazio)",
       diarization: "Identificação de speakers (pyannote)",
       summary: "Resumo (GPT)",
       email: "Envio de e-mail",
