@@ -1,11 +1,12 @@
 import asyncio
 import json
 import logging
+import os
 import traceback
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
-from services.transcription import transcribe_audio
+from services.transcription import transcribe_audio, get_audio_duration_seconds
 from services.diarization import diarize_audio, merge_transcript_with_speakers
 from services.summarization import summarize_meeting
 from services.email_service import send_meeting_email
@@ -13,6 +14,12 @@ from database.models import update_meeting, get_meeting
 
 logger = logging.getLogger(__name__)
 executor = ThreadPoolExecutor(max_workers=2)
+
+# Anti-hallucination guard. Whisper invents text when given silence/empty
+# audio (the headless-bot recordings were silent → fake "summaries" + 0 min).
+# A real meeting has both meaningful length AND meaningful speech.
+MIN_MEETING_SECONDS = int(os.getenv("MIN_MEETING_SECONDS", "20"))
+MIN_TRANSCRIPT_WORDS = int(os.getenv("MIN_TRANSCRIPT_WORDS", "15"))
 
 
 def _format_err(stage: str, exc: Exception) -> str:
@@ -59,6 +66,34 @@ async def process_meeting(
             status="error",
             error_stage="transcription",
             error_message=msg,
+        )
+        return
+
+    # ── 1.5 Anti-hallucination guard ───────────────────────────────────────
+    # Whisper fabricates plausible text from silence. Before we let GPT build
+    # a summary (and email it!), require BOTH a real audio length and real
+    # speech content. ffprobe gives ground-truth duration, immune to the
+    # bogus timestamps Whisper emits on silent input.
+    real_duration = get_audio_duration_seconds(audio_path)
+    total_text = " ".join(s.get("text", "") for s in transcript_segments).strip()
+    word_count = len(total_text.split())
+
+    if real_duration < MIN_MEETING_SECONDS or word_count < MIN_TRANSCRIPT_WORDS:
+        msg = (
+            f"Áudio sem conteúdo real (duração {real_duration:.0f}s, "
+            f"{word_count} palavras transcritas). Provável silêncio ou captura "
+            f"vazia — resumo e e-mail NÃO foram gerados para evitar alucinação. "
+            f"Grave novamente com áudio audível (mínimo {MIN_MEETING_SECONDS}s "
+            f"e {MIN_TRANSCRIPT_WORDS} palavras)."
+        )
+        logger.warning(f"[{meeting_id}] ⏭ Conteúdo insuficiente — pulando resumo/email: {msg}")
+        await update_meeting(
+            meeting_id,
+            status="error",
+            error_stage="no_content",
+            error_message=msg,
+            duration_seconds=int(real_duration),
+            transcript=json.dumps(transcript_segments, ensure_ascii=False),
         )
         return
 

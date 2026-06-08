@@ -24,6 +24,26 @@ async def convert_to_mp3(input_path: str) -> str:
         raise RuntimeError(f"ffmpeg error: {proc.stderr}")
     return output_path
 
+
+def get_audio_duration_seconds(path: str) -> float:
+    """
+    Ground-truth audio length via ffprobe. Independent of Whisper, which
+    hallucinates text (and bogus timestamps) when fed silence/empty audio.
+    Returns 0.0 if it can't be determined.
+    """
+    try:
+        proc = subprocess.run(
+            ["ffprobe", "-v", "error",
+             "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True
+        )
+        out = (proc.stdout or "").strip()
+        return float(out) if out else 0.0
+    except Exception as e:
+        logger.warning(f"ffprobe duration failed for {path}: {e}")
+        return 0.0
+
 async def transcribe_audio(audio_path: str) -> list[dict]:
     """
     Transcribe audio using Whisper API.
