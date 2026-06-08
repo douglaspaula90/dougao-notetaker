@@ -89,12 +89,12 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
-    logger.info("🚀 Bot API running on port 8080")
+    logger.info("🚀 Bot API running on port 8080 (manual mode only)")
+    logger.info("📋 Calendar watcher DISABLED — send POST /join to trigger bot")
 
-    # Start calendar watcher (automatic mode)
-    watcher = CalendarWatcher(on_meeting_start=on_meeting_start)
-    logger.info("📅 Calendar watcher active — bot will join all scheduled meetings")
-    await watcher.run()
+    # Keep running (no calendar watcher)
+    while True:
+        await asyncio.sleep(3600)
 
 
 if __name__ == "__main__":
