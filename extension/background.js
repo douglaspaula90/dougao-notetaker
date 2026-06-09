@@ -41,21 +41,37 @@ async function saveState() {
 // Hydrate state on startup (when the worker wakes up).
 loadState();
 
-// Clicking the toolbar icon opens the Side Panel (instead of a popup).
-// This gives us a user gesture in the panel that satisfies tabCapture's
-// "extension has been invoked" requirement — which is what broke before.
-chrome.runtime.onInstalled.addListener(() => {
+// Toolbar icon → open the Side Panel via OUR OWN onClicked handler.
+//
+// Why not openPanelOnActionClick:true? Because Chrome auto-opening the panel
+// does NOT grant the extension activeTab on the tab, so chrome.tabCapture
+// later fails with "Extension has not been invoked for the current page".
+// When the user clicks the icon and OUR onClicked code runs, that click
+// counts as an invocation and grants activeTab — which persists for the
+// tab's page lifetime, so getMediaStreamId() works when the user later
+// hits "Iniciar Gravação" in the panel.
+//
+// We must therefore DISABLE auto-open (it would swallow onClicked) and open
+// the panel ourselves.
+function disableAutoOpen() {
   try {
-    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
   } catch (e) {
-    console.warn("[bg] sidePanel.setPanelBehavior failed:", e);
+    console.warn("[bg] setPanelBehavior(false) failed:", e);
+  }
+}
+chrome.runtime.onInstalled.addListener(disableAutoOpen);
+disableAutoOpen();
+
+chrome.action.onClicked.addListener((tab) => {
+  // Open immediately, still inside the user-gesture window (no await before).
+  // This same click grants activeTab on `tab`, satisfying tabCapture later.
+  if (tab && tab.id != null) {
+    chrome.sidePanel.open({ tabId: tab.id }).catch(e =>
+      console.warn("[bg] sidePanel.open failed:", e)
+    );
   }
 });
-// Also re-apply on service-worker startup (setPanelBehavior persists, but
-// being explicit is cheap insurance for users upgrading from 1.0.x).
-try {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-} catch (e) { /* ignored */ }
 
 // ── Config ──────────────────────────────────────────────────────────────────
 async function getConfig() {

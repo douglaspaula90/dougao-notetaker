@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DougãoCast",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Grava e transcreve reuniões do Google Meet automaticamente.",
   "permissions": [
     "tabCapture",
