@@ -73,6 +73,28 @@ chrome.action.onClicked.addListener((tab) => {
   }
 });
 
+// Keepalive: while the offscreen doc records, it holds this port open so the
+// service worker is NOT suspended mid-recording (which used to wipe state and
+// make "Finalizar" report "Not recording" on long meetings).
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "keepalive") {
+    port.onMessage.addListener(() => {}); // no-op; keeping the port open is enough
+    port.onDisconnect.addListener(() => {});
+  }
+});
+
+// Ask the offscreen doc whether a recording is actually live. This is the
+// real source of truth (survives SW recycling).
+async function offscreenIsRecording() {
+  if (!(await hasOffscreen())) return false;
+  try {
+    const p = await chrome.runtime.sendMessage({ target: "offscreen", action: "OFFSCREEN_PING" });
+    return !!(p && p.recording);
+  } catch (e) {
+    return false;
+  }
+}
+
 // ── Config ──────────────────────────────────────────────────────────────────
 async function getConfig() {
   return new Promise(resolve => {
@@ -115,6 +137,13 @@ async function closeOffscreen() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.target === "offscreen") return false;
 
+  // Keepalive ping from the offscreen recorder — just answering it resets the
+  // SW idle timer. No-op response.
+  if (msg.action === "KEEPALIVE_PING") {
+    sendResponse({ ok: true });
+    return false;
+  }
+
   // Content script asking which tab it's in (used by the side panel).
   if (msg.action === "WHO_AM_I") {
     sendResponse({ tabId: sender.tab ? sender.tab.id : null });
@@ -139,16 +168,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg.action === "GET_STATUS") {
-    // Re-hydrate from session storage in case worker was suspended.
-    loadState().then(() => {
+    // The offscreen recorder is the source of truth (survives SW recycling).
+    (async () => {
+      await loadState();
+      const recording = (await offscreenIsRecording()) || state.isRecording;
       sendResponse({
-        isRecording: state.isRecording,
+        isRecording: recording,
         tabId: state.recordingTabId,
         duration: state.meetingStartTime
           ? Math.floor((Date.now() - state.meetingStartTime) / 1000)
           : 0
       });
-    });
+    })();
     return true;
   }
 });
@@ -197,10 +228,20 @@ async function startRecording(tabId, title) {
 }
 
 async function stopRecording(meetingTitle, speakerNames = {}) {
-  await loadState();
-  if (!state.isRecording) throw new Error("Not recording");
-
   const cfg = await getConfig();
+
+  // Source of truth = the offscreen recorder, NOT the SW's in-memory state
+  // (which is wiped when the worker is recycled during a long meeting). As
+  // long as the offscreen doc is still recording, we can stop + upload even
+  // if the SW "forgot" — that's what was losing 30-minute recordings.
+  const recording = await offscreenIsRecording();
+  if (!recording) {
+    await cleanup();
+    throw new Error(
+      "Nenhuma gravação ativa encontrada — o componente de captura foi " +
+      "encerrado pelo navegador. O áudio não pôde ser recuperado."
+    );
+  }
 
   try {
     const res = await chrome.runtime.sendMessage({
@@ -234,7 +275,7 @@ async function cleanup() {
 // ── Auto-detect meeting end ───────────────────────────────────────────────────
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   await loadState();
-  if (tabId === state.recordingTabId && state.isRecording) {
+  if (tabId === state.recordingTabId && (await offscreenIsRecording())) {
     console.log("[bg] Meet tab closed, finalizing recording...");
     try {
       await stopRecording("Reunião encerrada");
