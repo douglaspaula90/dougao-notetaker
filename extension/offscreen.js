@@ -1,11 +1,54 @@
 // DougãoCast — Offscreen recorder
 // MV3 service workers cannot call navigator.mediaDevices.getUserMedia or use
 // MediaRecorder. We do all the actual recording here in an offscreen document.
+//
+// The offscreen document is the SOURCE OF TRUTH for "is a recording active":
+// the service worker can be (and during long meetings WILL be) recycled,
+// losing its in-memory flags. This document keeps recording regardless. To
+// stop the SW from being killed mid-recording — which used to desync the UI
+// and make "Finalizar" report "Not recording" — we hold a keepalive port to
+// the SW for the entire recording.
 
 let mediaRecorder = null;
 let audioChunks = [];
 let mediaStream = null;
 let audioContext = null;
+let keepAlivePort = null;
+let keepAliveTimer = null;
+
+// ── Keepalive: hold a port open so the SW isn't suspended while recording ──
+function startKeepAlive() {
+  const connect = () => {
+    try {
+      keepAlivePort = chrome.runtime.connect({ name: "keepalive" });
+      keepAlivePort.onDisconnect.addListener(() => {
+        keepAlivePort = null;
+        // Reconnect only while still recording (Chrome may drop ports ~5min).
+        if (mediaRecorder) connect();
+      });
+    } catch (e) {
+      keepAlivePort = null;
+    }
+  };
+  connect();
+  // Belt-and-suspenders: ping every 20s to reset the SW idle timer even if
+  // the port mechanism changes across Chrome versions.
+  clearInterval(keepAliveTimer);
+  keepAliveTimer = setInterval(() => {
+    if (!mediaRecorder) return;
+    try {
+      chrome.runtime.sendMessage({ target: "sw", action: "KEEPALIVE_PING" }).catch(() => {});
+    } catch (e) { /* ignore */ }
+    if (!keepAlivePort) connect();
+  }, 20000);
+}
+
+function stopKeepAlive() {
+  clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
+  try { if (keepAlivePort) keepAlivePort.disconnect(); } catch (e) {}
+  keepAlivePort = null;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.target !== "offscreen") return false;
@@ -57,7 +100,11 @@ async function startCapture(streamId) {
   mediaRecorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) audioChunks.push(e.data);
   };
-  mediaRecorder.start(5000); // flush every 5s
+  // If the captured tab stream ends unexpectedly (tab closed/crashed), flush
+  // what we have instead of silently losing it.
+  mediaRecorder.onerror = (e) => console.error("[offscreen] MediaRecorder error:", e);
+  mediaRecorder.start(5000); // flush a chunk into audioChunks every 5s
+  startKeepAlive();
   console.log("[offscreen] recording started, streamId=", streamId);
 }
 
@@ -86,6 +133,7 @@ async function stopAndUpload(apiBase, title, speakerNames, apiKey) {
   mediaRecorder = null;
   audioContext = null;
   audioChunks = [];
+  stopKeepAlive();
 
   // Upload directly from the offscreen doc (avoids shipping the Blob across
   // contexts).
